@@ -3,7 +3,7 @@
 ; Or open in the Inno Setup IDE and press Ctrl+F9
 
 #define MyAppName "NPCJason"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "NPCJason"
 #define MyAppExeName "NPCJason.exe"
 
@@ -40,6 +40,9 @@ Name: "startup"; Description: "Start {#MyAppName} when &Windows starts"; GroupDe
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "npcjason.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "sayings.txt.example"; DestDir: "{app}"; Flags: ignoreversion
+Source: "skins\*"; DestDir: "{app}\skins"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "dialogue-packs\*"; DestDir: "{app}\dialogue-packs"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\npcjason.ico"

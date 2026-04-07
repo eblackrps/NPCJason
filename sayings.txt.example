@@ -1,0 +1,20 @@
+; Copy this file to sayings.txt next to NPCJason.exe
+; Separate each saying with a blank line.
+; Optional mood sections: [any], [happy], [tired], [caffeinated]
+
+[any]
+Hello from your custom sayings file.
+
+This line will join the default quote pool.
+
+[happy]
+Today's patch notes:
+more vibes, fewer bugs.
+
+[tired]
+If I close my eyes,
+that's just maintenance mode.
+
+[caffeinated]
+I have transcended
+normal frame pacing.

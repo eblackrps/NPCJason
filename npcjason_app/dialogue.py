@@ -1,0 +1,219 @@
+from pathlib import Path
+import random
+
+from .paths import RESOURCE_DIALOGUE_PACKS_DIR, RESOURCE_SAYINGS_PATH
+
+
+GENERAL_SAYINGS = [
+    "I used to be an adventurer like you...\nthen I took a reboot to the BIOS.",
+    "Have you tried turning it off\nand never turning it back on?",
+    "I'm not lazy.\nI'm on energy-saving mode.",
+    "Welcome, traveler!\nI have no quests.\nJust vibes.",
+    "Do I look like I know\nwhat a JPEG is?",
+    "Error 404:\nMotivation not found.",
+    "I'd give you a quest,\nbut I'm on break.",
+    "The real treasure was\nthe uptime we had along the way.",
+    "Sure, I could help...\nbut have you checked Stack Overflow?",
+    "NPC life is hard.\nSame dialogue. Every. Day.",
+    "I guard this desktop\nwith my life.\nNo, literally. I can't leave.",
+    "You look like someone\nwho closes terminals\nwithout saving.",
+    "My therapist says I need\nto stop living in other\npeople's taskbars.",
+    "You're doing great.\nSeriously. Keep going.",
+    "Every expert was once\na beginner who refused to quit.",
+    "Ship it.\nYou can fix it in prod.\n(Don't actually do that.)",
+    "Today's a good day\nto write clean code.",
+    "Remember:\nDone is better than perfect.",
+    "You've mass-deployed VMs\nbefore breakfast.\nYou can handle this.",
+    "Believe in yourself.\nI believe in you.\nAnd I'm just pixels.",
+    "There are 10 types of people:\nthose who understand binary\nand those who don't.",
+    "A SQL query walks into a bar,\nsees two tables, and asks...\n'Can I JOIN you?'",
+    "It works on my machine.\n...ships machine.",
+    "Git commit -m\n'I have no idea what I changed\nbut it works now'",
+    "'It's not a bug,\nit's a feature'\n- every dev ever",
+    "Roses are red,\nviolets are blue,\nunexpected '{'\non line 32.",
+    "To understand recursion,\nyou must first\nunderstand recursion.",
+    "There's no place like\n127.0.0.1",
+    "UDP joke?\nI'd tell you one\nbut you might not get it.",
+    "!false\n...it's funny because it's true.",
+    "Am I an NPC?\nOr are you the NPC\nin my story?",
+    "If a desktop pet dances\nand no one is watching,\ndoes it still lag?",
+    "I think, therefore I use RAM.",
+    "We're all just processes\nwaiting to be scheduled.",
+    "Do androids dream\nof electric uptime?",
+    "It's been two weeks\nand no coffee videos.",
+    "Where be my tokens?\nThey go'ed missin.",
+    "All yo firewalls\nbelonging to NPCJason.",
+    "F*CK Cisco Firepower.",
+    "Is this on mang?",
+    "Buller... Buller...",
+    "Anyone? Anyone?",
+    "ALL THE PATCHES?!",
+    "Thinking about\nREBOOT'n Winderz...",
+]
+
+MOOD_SAYINGS = {
+    "happy": [
+        "Mood check:\npleasantly pixelated.",
+        "Everything is coming up\nNPCJason today.",
+        "Quest log updated:\nfeeling optimistic.",
+        "Today's vibe is\nvictory music.",
+    ],
+    "tired": [
+        "Running on low mana\nand leftover snacks.",
+        "My frames are loading\none yawn at a time.",
+        "Please hold.\nSoul buffering.",
+        "If I blink too long,\ncall it a feature.",
+    ],
+    "caffeinated": [
+        "I can hear the CPU fans\nwith my soul.",
+        "Idle animation?\nMore like overclocked stance.",
+        "I have achieved\nespresso firmware.",
+        "If this speech bubble shakes,\nthat's just the coffee.",
+    ],
+}
+
+EVENT_SAYINGS = {
+    "usb": [
+        "New loot detected:\n{label}",
+        "A fresh artifact has entered\nthe inventory:\n{label}",
+        "Portable storage quest item:\n{label}",
+    ],
+    "battery_low": [
+        "Power reserves at {percent}%.\nThis may become a nap quest.",
+        "Battery low: {percent}%.\nRecommend snacks or a charger.",
+        "Mana warning.\nRemaining power: {percent}%.",
+    ],
+    "window_focus": [
+        "New quest window spotted:\n{title}",
+        "Foreground target acquired:\n{title}",
+        "Attention redirected to:\n{title}",
+    ],
+    "update": [
+        "Update available:\nversion {version} is ready.",
+        "Fresh patch spotted:\n{version}",
+        "A newer build awaits:\n{version}",
+    ],
+}
+
+PET_CONVERSATIONS = [
+    ("You good over there?", "Still desktoping professionally."),
+    ("Any quests for us?", "Only vibes and window watching."),
+    ("Status report.", "Snacks low. Morale high."),
+    ("You seeing this too?", "Affirmative. Still weird."),
+    ("We should look busy.", "I am literally animated."),
+    ("Mood check?", "Somewhere between happy and overclocked."),
+]
+
+
+def empty_pool():
+    return {
+        "any": [],
+        "happy": [],
+        "tired": [],
+        "caffeinated": [],
+    }
+
+
+def _normalize_text_block(lines):
+    cleaned = [line.rstrip() for line in lines]
+    return "\n".join(cleaned).strip()
+
+
+def parse_dialogue_text(text):
+    custom = empty_pool()
+    current_section = "any"
+    current_lines = []
+
+    def flush_current():
+        saying = _normalize_text_block(current_lines)
+        if saying:
+            custom[current_section].append(saying)
+        current_lines.clear()
+
+    for raw_line in text.splitlines():
+        stripped = raw_line.strip()
+        lowered = stripped.lower()
+
+        if lowered in {"[any]", "[all]"}:
+            flush_current()
+            current_section = "any"
+            continue
+        if lowered in {"[happy]", "[tired]", "[caffeinated]"}:
+            flush_current()
+            current_section = lowered[1:-1]
+            continue
+        if stripped.startswith("#") or stripped.startswith(";"):
+            continue
+        if stripped == "":
+            flush_current()
+            continue
+
+        current_lines.append(raw_line)
+
+    flush_current()
+    return custom
+
+
+def merge_pools(*pools):
+    merged = empty_pool()
+    for pool in pools:
+        for mood_key in merged:
+            merged[mood_key].extend(pool.get(mood_key, []))
+    return merged
+
+
+class DialogueLibrary:
+    def __init__(self, sayings_path=RESOURCE_SAYINGS_PATH, packs_dir=RESOURCE_DIALOGUE_PACKS_DIR):
+        self.sayings_path = Path(sayings_path)
+        self.packs_dir = Path(packs_dir)
+        self._signature = None
+        self._custom_pool = empty_pool()
+        self.reload_if_needed(force=True)
+
+    def _iter_files(self):
+        files = []
+        if self.sayings_path.exists():
+            files.append(self.sayings_path)
+        if self.packs_dir.exists():
+            files.extend(sorted(path for path in self.packs_dir.glob("*.txt") if path.is_file()))
+        return files
+
+    def _compute_signature(self):
+        signature = []
+        for path in self._iter_files():
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                continue
+            signature.append((str(path), stat.st_mtime_ns, stat.st_size))
+        return tuple(signature)
+
+    def reload_if_needed(self, force=False):
+        signature = self._compute_signature()
+        if not force and signature == self._signature:
+            return False
+
+        pools = []
+        for path in self._iter_files():
+            try:
+                pools.append(parse_dialogue_text(path.read_text(encoding="utf-8")))
+            except OSError:
+                continue
+
+        self._custom_pool = merge_pools(*pools) if pools else empty_pool()
+        self._signature = signature
+        return True
+
+    def ambient_pool(self, mood):
+        pool = list(GENERAL_SAYINGS)
+        pool.extend(MOOD_SAYINGS.get(mood, []))
+        pool.extend(self._custom_pool.get("any", []))
+        pool.extend(self._custom_pool.get(mood, []))
+        return pool or ["Still loading personality module."]
+
+    def random_saying(self, mood):
+        self.reload_if_needed()
+        return random.choice(self.ambient_pool(mood))
+
+    def format_event_text(self, event_key, **context):
+        return random.choice(EVENT_SAYINGS[event_key]).format(**context)

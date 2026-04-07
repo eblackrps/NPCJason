@@ -1,40 +1,111 @@
 # NPCJason - Desktop Pet Companion
 
-A pixel art NPC that lives on your Windows desktop and system tray.
-Click him to make him dance. He says random things throughout the day.
+NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Screenshot:** *(add screenshots here)*
+> **Current release target:** `v1.1.0`
+
+---
+
+## What’s New In v1.1.0
+
+This release adds the next major wave of polish and maintainability work:
+
+- External skin packs loaded from [`skins/`](./skins)
+- A real settings window for sound, startup, updates, reactions, and skin selection
+- `Start With Windows` management from inside the app
+- Generated `.wav` sound assets with volume control
+- Better multi-pet management, including dismissing specific pets or all friends
+- Event-driven Windows hooks for USB, power, and foreground-window reactions
+- Hot-reload for `sayings.txt` and [`dialogue-packs/`](./dialogue-packs)
+- Release automation that builds both the standalone EXE and the installer
+- A modular codebase plus automated unit tests
+- Auto-update checking with release notifications
 
 ---
 
 ## Features
 
-- **Pixel art character** rendered in real-time on your desktop
-- **System tray icon** - minimize to tray, access menu from notification area
-- **Dance animation** - click Jason to watch him bust a move
-- **Random sayings** - a mix of NPC humor, motivational quotes, and tech jokes
-- **Draggable** - move him anywhere on your desktop
-- **Speech bubbles** - floating popups with his wisdom
-- **Auto-sayings** - Jason speaks up every 3-8 minutes on his own
+- Multiple skins: Classic Jason, Wizard Jason, Knight Jason, and Astronaut Jason
+- External skin packs that can be dropped into [`skins/`](./skins) and hot-reloaded live
+- Idle breathing and blinking animation
+- Mood system: happy, tired, caffeinated
+- Event reactions for removable drives, low battery, and focused window changes
+- Optional sound effects with mute and volume control
+- Custom sayings from `sayings.txt`
+- Extra dialogue packs from [`dialogue-packs/`](./dialogue-packs)
+- Settings persistence in `%APPDATA%\NPCJason\settings.json`
+- Multi-pet support with light pet-to-pet chatter
+- Update checks against the GitHub releases feed
 
 ---
 
-## For Users: Install the Easy Way
+## Standalone Builds
 
-1. Download `NPCJason_Setup_1.0.0.exe` from the [Releases](../../releases) page
-2. Run the installer and follow the wizard
-3. NPCJason will appear on your desktop - no Python required!
+Yes: NPCJason can be fully standalone.
 
-The installer lets you choose:
-- Start Menu shortcut (always created)
-- Desktop shortcut (default: on)
-- Run on Windows startup (default: off)
+- End users can run `NPCJason.exe` with no Python installed
+- The installer bundles the standalone app as well
+- Python and pip are only needed if you want to run or build from source
 
-To uninstall, use **Add or Remove Programs** in Windows Settings.
+The project uses PyInstaller for standalone packaging today. If you ever want an even more native-feeling binary, `Nuitka` would be the next thing to evaluate, but it is not required for end-user distribution.
 
 ---
 
-## For Developers: Build from Source
+## For Users
+
+### Install the easy way
+
+1. Open the [Releases](../../releases) page
+2. Download either:
+   - `NPCJason.exe` for the standalone app
+   - `NPCJason_Setup_1.1.0.exe` for the installer
+3. Launch it and let Jason haunt your desktop
+
+### Controls
+
+| Action | What Happens |
+|--------|-------------|
+| Left-click | Dance + say something |
+| Right-click | Open the quick menu |
+| Click + drag | Move Jason anywhere |
+| Tray icon | Show/Hide, settings, skins, startup toggle, updates, summon/dismiss pets |
+
+### Custom sayings
+
+Create a `sayings.txt` file next to `NPCJason.exe`. Entries are separated by blank lines.
+
+```text
+[any]
+General line here.
+
+[happy]
+Everything is coming up Jason.
+
+[tired]
+I am approximately 40% yawns.
+```
+
+NPCJason hot-reloads `sayings.txt` while running, so you usually do not need to restart the app.
+
+### Dialogue packs
+
+Add extra `.txt` files to [`dialogue-packs/`](./dialogue-packs). They use the same section format as `sayings.txt` and are also hot-reloaded.
+
+### Skin packs
+
+Add extra `.json` files to [`skins/`](./skins). NPCJason will detect them at runtime and add them to the skin menus.
+
+### Saved state
+
+NPCJason stores state in `%APPDATA%\NPCJason\`.
+
+- `settings.json`: position, skin, mood, sound, startup/update preferences
+- `shared_state.json`: pet coordination, chatter, and pet-management commands
+- `sounds/`: generated sound assets used for playback
+
+---
+
+## For Developers
 
 ### Prerequisites
 
@@ -44,9 +115,21 @@ To uninstall, use **Add or Remove Programs** in Windows Settings.
 
 ### Run from source
 
-```bash
-pip install -r requirements.txt
+```bat
+python -m pip install -r requirements.txt
 python npcjason.py
+```
+
+### Quick start script
+
+```bat
+run_npcjason.bat
+```
+
+### Run tests
+
+```bat
+python -m unittest discover -s tests
 ```
 
 ### Build the standalone EXE
@@ -55,9 +138,9 @@ python npcjason.py
 build.bat
 ```
 
-This installs PyInstaller, generates the icon, and produces `dist\NPCJason.exe`.
+This installs dependencies, runs tests, generates the icon, and produces `dist\NPCJason.exe`.
 
-### Build the installer (EXE + Inno Setup installer)
+### Build the installer
 
 1. Install [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 2. Run:
@@ -66,63 +149,35 @@ This installs PyInstaller, generates the icon, and produces `dist\NPCJason.exe`.
 build_installer.bat
 ```
 
-This produces both `dist\NPCJason.exe` and `NPCJason_Setup_1.0.0.exe` in the project root.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.1.0.exe`.
 
-You can also compile the installer manually:
+### Release automation
 
-```bat
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
-```
+Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml), which:
 
-### Build files
+1. Installs dependencies
+2. Runs the test suite
+3. Builds the standalone EXE
+4. Builds the installer
+5. Generates SHA256 checksums
+6. Uploads all release assets to GitHub
 
-| File | Purpose |
+### Project layout
+
+| Path | Purpose |
 |------|---------|
-| `generate_icon.py` | Creates `npcjason.ico` from pixel art (run before PyInstaller) |
-| `npcjason.spec` | PyInstaller spec file (reproducible builds) |
-| `installer.iss` | Inno Setup 6 installer script |
-| `build.bat` | One-click: install deps, generate icon, build EXE |
-| `build_installer.bat` | One-click: build EXE + compile Inno Setup installer |
-| `version_info.txt` | Windows EXE version metadata (embedded by PyInstaller) |
-
----
-
-## Controls
-
-| Action | What Happens |
-|--------|-------------|
-| Left-click | Jason dances + says something |
-| Right-click | Context menu (Dance, Say Something, Quit) |
-| Click + Drag | Move Jason anywhere on the desktop |
-| System tray icon | Show/Hide, Dance, Say Something, Quit |
-
----
-
-## Customization
-
-### Add your own sayings
-
-Edit the `SAYINGS` list in `npcjason.py`:
-
-```python
-SAYINGS = [
-    "Your custom line here.",
-    ...
-]
-```
-
-### Change the pixel art
-
-Edit `FRAME_IDLE`, `FRAME_DANCE1`, `FRAME_DANCE2`, `FRAME_DANCE3` in `npcjason.py`.
-Each character maps to a color in the `PALETTE` dict. Use `.` for transparent pixels.
-
-### Adjust timing
-
-| Setting | Location | Default |
-|---------|----------|---------|
-| Dance frame speed | `_animation_loop`, `after(150, ...)` | 150 ms/frame |
-| Auto-saying interval | `_schedule_random_saying` | 3-8 min |
-| Speech bubble duration | `SpeechBubble.__init__`, `after(4000 + ...)` | ~4 sec + text |
+| `npcjason.py` | Thin launcher entrypoint |
+| `npcjason_app/app.py` | Main runtime app |
+| `npcjason_app/dialogue.py` | Sayings, dialogue packs, event text |
+| `npcjason_app/skins.py` | Frame rendering + skin loading |
+| `npcjason_app/windows_events.py` | Native Windows event hooks |
+| `npcjason_app/settings_window.py` | Settings UI |
+| `npcjason_app/sound.py` | Sound asset generation + playback |
+| `npcjason_app/startup.py` | Windows startup shortcut management |
+| `tests/` | Automated unit tests |
+| `skins/` | External skin definitions |
+| `dialogue-packs/` | External dialogue packs |
+| `.github/workflows/release.yml` | Release automation |
 
 ---
 

@@ -1,13 +1,28 @@
 # npcjason.spec - PyInstaller spec file for NPCJason Desktop Pet
 # Run: pyinstaller npcjason.spec --clean --noconfirm
 
+import os
+
 block_cipher = None
+datas = []
+
+for source_dir in ['skins', 'dialogue-packs']:
+    if os.path.isdir(source_dir):
+        for root, _dirs, files in os.walk(source_dir):
+            for filename in files:
+                source_path = os.path.join(root, filename)
+                relative_dir = os.path.dirname(source_path)
+                datas.append((source_path, relative_dir))
+
+for filename in ['sayings.txt.example']:
+    if os.path.exists(filename):
+        datas.append((filename, '.'))
 
 a = Analysis(
     ['npcjason.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=datas,
     hiddenimports=[
         'pystray._win32',
         'PIL._tkinter_finder',
