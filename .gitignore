@@ -1,0 +1,32 @@
+# PyInstaller output
+dist/
+build/
+*.spec.bak
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Generated icon (reproducible via generate_icon.py)
+npcjason.ico
+
+# Inno Setup output (installers go in releases, not repo)
+NPCJason_Setup_*.exe
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE / editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS artifacts
+Thumbs.db
+desktop.ini
+.DS_Store
