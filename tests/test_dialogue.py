@@ -1,6 +1,6 @@
 import unittest
 
-from npcjason_app.dialogue import merge_pools, parse_dialogue_text
+from npcjason_app.dialogue import merge_pools, parse_dialogue_text, render_template
 
 
 class DialogueTests(unittest.TestCase):
@@ -32,6 +32,17 @@ class DialogueTests(unittest.TestCase):
 
         self.assertEqual(["a", "b"], merged["any"])
         self.assertEqual(["c"], merged["happy"])
+
+    def test_render_template_replaces_known_tokens_only(self):
+        rendered = render_template(
+            "Hi {pet_name}. Unknown stays {mystery}. Literal brace: {",
+            {"pet_name": "Jason"},
+        )
+
+        self.assertEqual(
+            "Hi Jason. Unknown stays {mystery}. Literal brace: {",
+            rendered,
+        )
 
 
 if __name__ == "__main__":

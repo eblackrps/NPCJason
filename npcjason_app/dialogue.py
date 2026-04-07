@@ -1,5 +1,6 @@
 from pathlib import Path
 import random
+import re
 
 from .paths import RESOURCE_DIALOGUE_PACKS_DIR, RESOURCE_SAYINGS_PATH
 
@@ -96,13 +97,15 @@ EVENT_SAYINGS = {
 }
 
 PET_CONVERSATIONS = [
-    ("You good over there?", "Still desktoping professionally."),
-    ("Any quests for us?", "Only vibes and window watching."),
-    ("Status report.", "Snacks low. Morale high."),
-    ("You seeing this too?", "Affirmative. Still weird."),
-    ("We should look busy.", "I am literally animated."),
-    ("Mood check?", "Somewhere between happy and overclocked."),
+    ("You good over there, {other_pet_name}?", "Still desktoping professionally, {pet_name}."),
+    ("Any quests for us, {other_pet_name}?", "Only vibes and window watching, {pet_name}."),
+    ("Status report, {other_pet_name}.", "Snacks low. Morale high."),
+    ("You seeing this too, {other_pet_name}?", "Affirmative. Still weird."),
+    ("We should look busy, {other_pet_name}.", "I am literally animated."),
+    ("Mood check, {other_pet_name}?", "Somewhere between happy and overclocked, {pet_name}."),
 ]
+
+TOKEN_PATTERN = re.compile(r"\{([a-z_]+)\}")
 
 
 def empty_pool():
@@ -162,6 +165,18 @@ def merge_pools(*pools):
     return merged
 
 
+def render_template(text, context=None):
+    context = context or {}
+
+    def replace(match):
+        token = match.group(1)
+        if token in context:
+            return str(context[token])
+        return match.group(0)
+
+    return TOKEN_PATTERN.sub(replace, str(text))
+
+
 class DialogueLibrary:
     def __init__(self, sayings_path=RESOURCE_SAYINGS_PATH, packs_dir=RESOURCE_DIALOGUE_PACKS_DIR):
         self.sayings_path = Path(sayings_path)
@@ -211,9 +226,9 @@ class DialogueLibrary:
         pool.extend(self._custom_pool.get(mood, []))
         return pool or ["Still loading personality module."]
 
-    def random_saying(self, mood):
+    def random_saying(self, mood, context=None):
         self.reload_if_needed()
-        return random.choice(self.ambient_pool(mood))
+        return render_template(random.choice(self.ambient_pool(mood)), context)
 
     def format_event_text(self, event_key, **context):
-        return random.choice(EVENT_SAYINGS[event_key]).format(**context)
+        return render_template(random.choice(EVENT_SAYINGS[event_key]), context)

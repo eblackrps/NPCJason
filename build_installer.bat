@@ -65,7 +65,7 @@ if errorlevel 1 (
 echo.
 echo ============================================
 echo  EXE:       dist\NPCJason.exe
-echo  Installer: NPCJason_Setup_1.1.0.exe
+echo  Installer: NPCJason_Setup_1.2.0.exe
 echo ============================================
 echo.
 pause

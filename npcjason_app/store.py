@@ -69,6 +69,10 @@ class JsonStore:
         ensure_app_dirs()
         return self._read_unlocked()
 
+    def write(self, data):
+        ensure_app_dirs()
+        self._write_atomic(data)
+
     def update(self, mutator):
         ensure_app_dirs()
         lock_path = self.path.with_suffix(self.path.suffix + ".lock")

@@ -1,6 +1,9 @@
 {
   "key": "jason",
   "label": "Classic Jason",
+  "author": "NPCJason",
+  "description": "The original blue-shirt desktop gremlin.",
+  "version": "1.2",
   "char_map": {},
   "palette": {},
   "tray": {

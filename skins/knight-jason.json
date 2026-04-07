@@ -1,6 +1,9 @@
 {
   "key": "knight",
   "label": "Knight Jason",
+  "author": "NPCJason",
+  "description": "Heavy armor for serious taskbar patrol duty.",
+  "version": "1.2",
   "char_map": {
     "H": "N",
     "T": "N",

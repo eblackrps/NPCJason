@@ -36,10 +36,20 @@ if IS_WINDOWS:
             ("BatteryFullLifeTime", wintypes.DWORD),
         ]
 
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", wintypes.LONG),
+            ("top", wintypes.LONG),
+            ("right", wintypes.LONG),
+            ("bottom", wintypes.LONG),
+        ]
+
     user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
     user32.GetWindowTextLengthW.restype = ctypes.c_int
     user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+    user32.GetWindowRect.restype = wintypes.BOOL
     user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, LONG_PTR]
     user32.SetWindowLongPtrW.restype = LONG_PTR
     user32.CallWindowProcW.argtypes = [LONG_PTR, wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
@@ -100,6 +110,35 @@ def get_battery_snapshot():
         "percent": int(status.BatteryLifePercent),
         "charging": status.ACLineStatus == 1,
     }
+
+
+def get_window_rect(hwnd=None):
+    if not IS_WINDOWS:
+        return None
+    hwnd = hwnd or user32.GetForegroundWindow()
+    if not hwnd:
+        return None
+    rect = RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return None
+    return {
+        "left": int(rect.left),
+        "top": int(rect.top),
+        "right": int(rect.right),
+        "bottom": int(rect.bottom),
+        "width": int(rect.right - rect.left),
+        "height": int(rect.bottom - rect.top),
+    }
+
+
+def is_foreground_fullscreen(screen_width, screen_height):
+    rect = get_window_rect()
+    if not rect:
+        return False
+    return (
+        rect["width"] >= max(1, screen_width - 24)
+        and rect["height"] >= max(1, screen_height - 24)
+    )
 
 
 class WindowsEventBridge:

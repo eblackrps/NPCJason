@@ -2,24 +2,24 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.1.0`
+> **Current release target:** `v1.2.0`
 
 ---
 
-## What’s New In v1.1.0
+## What’s New In v1.2.0
 
-This release adds the next major wave of polish and maintainability work:
+This release adds the next 10 quality-of-life passes:
 
-- External skin packs loaded from [`skins/`](./skins)
-- A real settings window for sound, startup, updates, reactions, and skin selection
-- `Start With Windows` management from inside the app
-- Generated `.wav` sound assets with volume control
-- Better multi-pet management, including dismissing specific pets or all friends
-- Event-driven Windows hooks for USB, power, and foreground-window reactions
-- Hot-reload for `sayings.txt` and [`dialogue-packs/`](./dialogue-packs)
-- Release automation that builds both the standalone EXE and the installer
-- A modular codebase plus automated unit tests
-- Auto-update checking with release notifications
+- Custom pet naming, including named summoned friends
+- Dialogue placeholders such as `{pet_name}`, `{mood}`, `{time}`, and `{active_window}`
+- Quiet hours plus fullscreen do-not-disturb for automatic chatter
+- Granular reaction toggles for USB, battery, focus, updates, pet chat, and ambient sayings
+- Recent-sayings history and favorite quote templates
+- Automatic antics scheduling with configurable timing and dance chance
+- Edge snapping plus a reliable “Bring Back On Screen” recovery option
+- Settings export, import, and reset flows
+- Skin metadata plus validation feedback in Settings
+- Diagnostics logging with quick-open shortcuts for the data folder and log file
 
 ---
 
@@ -31,11 +31,14 @@ This release adds the next major wave of polish and maintainability work:
 - Mood system: happy, tired, caffeinated
 - Event reactions for removable drives, low battery, and focused window changes
 - Optional sound effects with mute and volume control
+- Quiet hours and fullscreen suppression for automatic chatter
 - Custom sayings from `sayings.txt`
 - Extra dialogue packs from [`dialogue-packs/`](./dialogue-packs)
+- Favorites and recent-saying history
 - Settings persistence in `%APPDATA%\NPCJason\settings.json`
 - Multi-pet support with light pet-to-pet chatter
 - Update checks against the GitHub releases feed
+- Diagnostics log output in `%APPDATA%\NPCJason\logs\npcjason.log`
 
 ---
 
@@ -58,7 +61,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.1.0.exe` for the installer
+   - `NPCJason_Setup_1.2.0.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -76,31 +79,32 @@ Create a `sayings.txt` file next to `NPCJason.exe`. Entries are separated by bla
 
 ```text
 [any]
-General line here.
+{pet_name} is on desktop watch.
 
 [happy]
-Everything is coming up Jason.
+Everything is coming up {pet_name}.
 
 [tired]
-I am approximately 40% yawns.
+It is {time}. I would like fewer meetings.
 ```
 
 NPCJason hot-reloads `sayings.txt` while running, so you usually do not need to restart the app.
 
 ### Dialogue packs
 
-Add extra `.txt` files to [`dialogue-packs/`](./dialogue-packs). They use the same section format as `sayings.txt` and are also hot-reloaded.
+Add extra `.txt` files to [`dialogue-packs/`](./dialogue-packs). They use the same section format as `sayings.txt` and also support placeholders like `{pet_name}` and `{active_window}`.
 
 ### Skin packs
 
-Add extra `.json` files to [`skins/`](./skins). NPCJason will detect them at runtime and add them to the skin menus.
+Add extra `.json` files to [`skins/`](./skins). NPCJason will detect them at runtime, validate them, and add them to the skin menus.
 
 ### Saved state
 
 NPCJason stores state in `%APPDATA%\NPCJason\`.
 
-- `settings.json`: position, skin, mood, sound, startup/update preferences
+- `settings.json`: position, skin, mood, sound, startup/update preferences, favorites, quiet hours, and reaction toggles
 - `shared_state.json`: pet coordination, chatter, and pet-management commands
+- `logs\npcjason.log`: diagnostics log
 - `sounds/`: generated sound assets used for playback
 
 ---
@@ -149,18 +153,19 @@ This installs dependencies, runs tests, generates the icon, and produces `dist\N
 build_installer.bat
 ```
 
-This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.1.0.exe`.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.2.0.exe`.
 
 ### Release automation
 
 Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml), which:
 
-1. Installs dependencies
-2. Runs the test suite
-3. Builds the standalone EXE
-4. Builds the installer
-5. Generates SHA256 checksums
-6. Uploads all release assets to GitHub
+1. Reads the app version from source
+2. Installs dependencies
+3. Runs the test suite
+4. Builds the standalone EXE
+5. Builds the installer
+6. Generates SHA256 checksums
+7. Uploads all release assets to GitHub
 
 ### Project layout
 
@@ -174,6 +179,7 @@ Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github
 | `npcjason_app/settings_window.py` | Settings UI |
 | `npcjason_app/sound.py` | Sound asset generation + playback |
 | `npcjason_app/startup.py` | Windows startup shortcut management |
+| `npcjason_app/diagnostics.py` | Diagnostics logging helpers |
 | `tests/` | Automated unit tests |
 | `skins/` | External skin definitions |
 | `dialogue-packs/` | External dialogue packs |

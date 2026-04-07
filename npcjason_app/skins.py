@@ -208,6 +208,9 @@ def default_skin_definition():
     return {
         "key": "jason",
         "label": "Classic Jason",
+        "author": "NPCJason",
+        "description": "The default blue-shirt desktop gremlin.",
+        "version": "1.0",
         "char_map": {},
         "overlay": EMPTY_OVERLAY,
         "palette": {},
@@ -243,8 +246,57 @@ def _normalize_overlay(rows):
     return normalized
 
 
-def load_skin_files():
+def validate_skin_definition(data, source_name="<memory>"):
+    errors = []
+    normalized = dict(data or {})
+
+    skin_key = normalized.get("key")
+    if not isinstance(skin_key, str) or not skin_key.strip():
+        errors.append(f"{source_name}: missing or invalid 'key'")
+        return None, errors
+    normalized["key"] = skin_key.strip()
+
+    label = normalized.get("label", skin_key.title())
+    normalized["label"] = str(label)
+    normalized["author"] = str(normalized.get("author", "Unknown"))
+    normalized["description"] = str(normalized.get("description", "No description provided."))
+    normalized["version"] = str(normalized.get("version", "1.0"))
+
+    if not isinstance(normalized.get("char_map", {}), dict):
+        errors.append(f"{source_name}: 'char_map' must be an object")
+        normalized["char_map"] = {}
+    else:
+        normalized["char_map"] = {
+            str(key)[:1]: str(value)[:1]
+            for key, value in normalized.get("char_map", {}).items()
+        }
+
+    if not isinstance(normalized.get("palette", {}), dict):
+        errors.append(f"{source_name}: 'palette' must be an object")
+        normalized["palette"] = {}
+    else:
+        normalized["palette"] = {
+            str(key)[:1]: str(value)
+            for key, value in normalized.get("palette", {}).items()
+        }
+
+    tray = normalized.get("tray", {})
+    if not isinstance(tray, dict):
+        errors.append(f"{source_name}: 'tray' must be an object")
+        tray = {}
+    default_tray = default_skin_definition()["tray"]
+    normalized["tray"] = {
+        "hair": str(tray.get("hair", default_tray["hair"])),
+        "body": str(tray.get("body", default_tray["body"])),
+        "legs": str(tray.get("legs", default_tray["legs"])),
+    }
+    normalized["overlay"] = _normalize_overlay(normalized.get("overlay", EMPTY_OVERLAY))
+    return normalized, errors
+
+
+def load_skin_bundle():
     definitions = {}
+    errors = []
     seen_directories = []
     for directory in [BUNDLED_SKINS_DIR, RESOURCE_SKINS_DIR]:
         directory = Path(directory)
@@ -257,20 +309,21 @@ def load_skin_files():
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
+                errors.append(f"{path.name}: could not parse JSON")
                 continue
-            skin_key = data.get("key")
-            if not skin_key:
+            normalized, skin_errors = validate_skin_definition(data, path.name)
+            errors.extend(skin_errors)
+            if normalized is None:
                 continue
-            data.setdefault("label", skin_key.title())
-            data.setdefault("char_map", {})
-            data.setdefault("palette", {})
-            data.setdefault("tray", default_skin_definition()["tray"])
-            data["overlay"] = _normalize_overlay(data.get("overlay", EMPTY_OVERLAY))
-            definitions[skin_key] = data
+            definitions[normalized["key"]] = normalized
 
     if "jason" not in definitions:
         definitions["jason"] = default_skin_definition()
-    return definitions
+    return {"definitions": definitions, "errors": errors}
+
+
+def load_skin_files():
+    return load_skin_bundle()["definitions"]
 
 
 def build_skin_assets(skin_definition):

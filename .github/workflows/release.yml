@@ -16,6 +16,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
 
+      - name: Read app version
+        id: version
+        shell: pwsh
+        run: |
+          $match = Select-String -Path "npcjason_app/version.py" -Pattern 'APP_VERSION = "([^"]+)"'
+          if (-not $match) {
+            throw "Could not determine app version from npcjason_app/version.py"
+          }
+          $version = $match.Matches[0].Groups[1].Value
+          "app_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -53,7 +64,7 @@ jobs:
         run: |
           $assets = @(
             "dist\NPCJason.exe",
-            "NPCJason_Setup_1.1.0.exe"
+            "NPCJason_Setup_${{ steps.version.outputs.app_version }}.exe"
           )
           $lines = foreach ($asset in $assets) {
             $hash = Get-FileHash -Path $asset -Algorithm SHA256
@@ -67,7 +78,7 @@ jobs:
           name: NPCJason-${{ github.event.release.tag_name || github.ref_name }}
           path: |
             dist/NPCJason.exe
-            NPCJason_Setup_1.1.0.exe
+            NPCJason_Setup_${{ steps.version.outputs.app_version }}.exe
             release-sha256.txt
           if-no-files-found: error
 
@@ -88,7 +99,7 @@ jobs:
 
           $assets = @(
             @{ name = "NPCJason.exe"; path = "dist\NPCJason.exe" },
-            @{ name = "NPCJason_Setup_1.1.0.exe"; path = "NPCJason_Setup_1.1.0.exe" },
+            @{ name = "NPCJason_Setup_${{ steps.version.outputs.app_version }}.exe"; path = "NPCJason_Setup_${{ steps.version.outputs.app_version }}.exe" },
             @{ name = "release-sha256.txt"; path = "release-sha256.txt" }
           )
 

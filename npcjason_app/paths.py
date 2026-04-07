@@ -15,6 +15,8 @@ APPDATA_DIR = Path(
 SETTINGS_PATH = APPDATA_DIR / "settings.json"
 SHARED_STATE_PATH = APPDATA_DIR / "shared_state.json"
 SOUNDS_CACHE_DIR = APPDATA_DIR / "sounds"
+LOGS_DIR = APPDATA_DIR / "logs"
+LOG_PATH = LOGS_DIR / "npcjason.log"
 RESOURCE_SAYINGS_PATH = RESOURCE_DIR / "sayings.txt"
 RESOURCE_DIALOGUE_PACKS_DIR = RESOURCE_DIR / "dialogue-packs"
 RESOURCE_SKINS_DIR = RESOURCE_DIR / "skins"
@@ -32,6 +34,7 @@ STARTUP_DIR = (
 def ensure_app_dirs():
     APPDATA_DIR.mkdir(parents=True, exist_ok=True)
     SOUNDS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def runtime_entrypoint():

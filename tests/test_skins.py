@@ -1,6 +1,11 @@
 import unittest
 
-from npcjason_app.skins import EMPTY_OVERLAY, build_skin_assets, default_skin_definition
+from npcjason_app.skins import (
+    EMPTY_OVERLAY,
+    build_skin_assets,
+    default_skin_definition,
+    validate_skin_definition,
+)
 
 
 class SkinTests(unittest.TestCase):
@@ -20,6 +25,18 @@ class SkinTests(unittest.TestCase):
         body_rows = "\n".join(assets["frames"]["idle_open"])
         self.assertIn("Z", body_rows)
         self.assertEqual("#123456", assets["palette"]["Z"])
+
+    def test_validate_skin_definition_adds_defaults_and_reports_invalid_tray(self):
+        normalized, errors = validate_skin_definition(
+            {"key": " ranger ", "tray": "invalid"},
+            "ranger.json",
+        )
+
+        self.assertEqual("ranger", normalized["key"])
+        self.assertEqual("Unknown", normalized["author"])
+        self.assertEqual("No description provided.", normalized["description"])
+        self.assertEqual("1.0", normalized["version"])
+        self.assertTrue(any("'tray' must be an object" in error for error in errors))
 
 
 if __name__ == "__main__":

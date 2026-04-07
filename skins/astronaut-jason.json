@@ -1,6 +1,9 @@
 {
   "key": "astronaut",
   "label": "Astronaut Jason",
+  "author": "NPCJason",
+  "description": "A retro space-suit remix for orbital desktop shifts.",
+  "version": "1.2",
   "char_map": {
     "H": "U",
     "T": "U",
