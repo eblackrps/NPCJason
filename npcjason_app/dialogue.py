@@ -124,6 +124,8 @@ ALLOWED_TEMPLATE_TOKENS = {
     "battery_percent",
     "skin",
     "skin_key",
+    "companion",
+    "dance_routine",
     "label",
     "percent",
     "title",

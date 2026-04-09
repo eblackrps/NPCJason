@@ -4,6 +4,7 @@ from npcjason_app.skins import (
     EMPTY_OVERLAY,
     build_skin_assets,
     default_skin_definition,
+    load_skin_bundle,
     validate_skin_definition,
 )
 
@@ -76,6 +77,13 @@ class SkinTests(unittest.TestCase):
         self.assertEqual("custom", normalized["capabilities"]["interaction_animation"])
         self.assertEqual(300, normalized["animations"]["idle"][0]["delay_ms"])
         self.assertFalse(errors)
+
+    def test_repo_bundle_includes_squarl_suit_skin(self):
+        bundle = load_skin_bundle()
+
+        self.assertIn("squarl-suit", bundle["definitions"])
+        self.assertEqual("Squarl Suit Jason", bundle["definitions"]["squarl-suit"]["label"])
+        self.assertEqual([], [error for error in bundle["errors"] if "squarl-suit-jason.json" in error])
 
 
 if __name__ == "__main__":

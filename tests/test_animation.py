@@ -38,6 +38,24 @@ class AnimationControllerTests(unittest.TestCase):
         self.assertEqual("dance3", interaction.frame_key)
         self.assertEqual(1, interaction.offset_y)
 
+    def test_multiple_dance_routines_are_available(self):
+        controller = AnimationController()
+
+        routines = [routine.key for routine in controller.available_dance_routines()]
+
+        self.assertIn("classic-bounce", routines)
+        self.assertIn("desk-shuffle", routines)
+        self.assertIn("victory-stomp", routines)
+
+    def test_start_dance_uses_requested_routine(self):
+        controller = AnimationController()
+
+        controller.start_dance("victory-stomp")
+        frames = [controller.next_frame("happy").frame_key for _ in range(4)]
+
+        self.assertEqual("victory-stomp", controller.current_dance_key())
+        self.assertIn("dance3", frames)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,82 @@
+{
+  "key": "app-title-humor",
+  "label": "App Title Humor",
+  "description": "Selective little reactions for window titles Jason decides are his business.",
+  "weight": 1,
+  "enabled": true,
+  "categories": [
+    "office",
+    "playful",
+    "title"
+  ],
+  "affinity": {
+    "contexts": [
+      "title-observed",
+      "title-ticket",
+      "title-terminal",
+      "title-meeting",
+      "title-code",
+      "title-homelab",
+      "title-cisco"
+    ]
+  },
+  "quotes": [
+    "Reading '{title}' was not on my ticket.\nYet here we are.",
+    "'{title}' sounds like a problem trying to look organized.",
+    "Foreground target '{title}' acquired.\nSuspicion level elevated.",
+    "I looked at '{title}' and immediately developed a follow-up question.",
+    "'{title}' has strong 'this meeting could have been a note' energy.",
+    "'{title}' sounds like somebody clicked the wrong thing with confidence.",
+    "Observing '{title}'.\nI am judging the vibe, not the user.",
+    "'{title}' is either important or very committed to looking important.",
+    "I have read '{title}'.\nwhat do.",
+    "'{title}' feels like a tab that was never meant to become a lifestyle.",
+    "That window title is '{title}'.\nBold.",
+    "'{title}' appears to be one of those afternoons.",
+    {
+      "text": "'{title}' is giving terminal goblin energy.",
+      "categories": [
+        "office",
+        "playful",
+        "terminal"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-terminal",
+          "title-code"
+        ]
+      }
+    },
+    {
+      "text": "'{title}' looks like a ticket that became a personal journey.",
+      "categories": [
+        "office",
+        "responsible",
+        "ticket"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-ticket"
+        ]
+      }
+    },
+    {
+      "text": "'{title}' is why my little blazer skin exists.",
+      "categories": [
+        "office",
+        "playful"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-meeting",
+          "title-ticket"
+        ],
+        "skins": [
+          "office",
+          "responsible",
+          "squarl-suit"
+        ]
+      }
+    }
+  ]
+}

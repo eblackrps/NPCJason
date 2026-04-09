@@ -2,23 +2,22 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.5.0`
+> **Current release target:** `v1.6.0`
 
 ---
 
-## What’s New In v1.5.0
+## What’s New In v1.6.0
 
-This release focuses on making NPCJason feel smarter, stranger, and more memorable during long desktop sessions:
+This release focuses on making NPCJason feel more alive, more situationally funny, and more likely to commit a polished little desktop bit:
 
-- Expanded personality states with mood-driven quote, movement, and scenario bias
-- Smarter desktop movement with pacing, hesitation, edge inspection, and safer recovery near corners and boundaries
-- Gag chains and mini-scenarios including Busy IT Morning, Homelab Troubleshooting, Network Victory Lap, Responsible Adult Moment, and Office Chaos
-- Favorites and personalization that gently bias skins, toys, scenarios, and quote packs toward your preferred flavor of desktop menace
-- Discoveries and unlockables, including Astronaut Jason and extra long-session surprises
-- Seasonal and special-event support such as Monday Morning Survival, Patch Day Panic, and Homelab Weekend
-- Richer optional audio behavior with category-aware mute handling and fast tray access
-- Stronger persistence for favorites, unlocks, special modes, mute state, and scenario continuity
-- “What do” sayings plus release-hardening fixes for unlock gating, packaged resource loading, and sound-category behavior
+- A new companion framework with the first real sidekick: a tiny pet mouse that follows Jason around the desktop
+- Feed Cheese interaction with a visible backflip routine and the required post-stunt line: `Ansible Chris made me do it`
+- Three total dance routines now in rotation so dance moments feel like a recurring treat instead of one repeated loop
+- Squarl Suit Jason added as a full first-class skin with proper metadata, offsets, and quote affinity
+- Smarter app-title humor that occasionally reacts to useful foreground titles without feeling creepy or spammy
+- A dedicated Cisco joke pack for networking moods, title observations, and suspiciously smug routing moments
+- Context-aware comedy tuning so title jokes, dances, companion beats, and existing quote packs play together more cleanly
+- Release-pass polish for companion cleanup, title safety, quote timing, and content registration
 
 ---
 
@@ -32,8 +31,12 @@ This release focuses on making NPCJason feel smarter, stranger, and more memorab
 - Mood system: happy, tired, caffeinated
 - Personality state system with idle, curious, smug, busy, annoyed, celebrating, confused, sneaky, and exhausted behavior
 - Autonomous desktop movement with pacing, hesitation, edge inspection, and better recovery from awkward pathing
+- Local companion framework with the pet mouse sidekick, follow/wait/react states, and menu-triggered interactions
+- Cheese feeding and the mouse backflip routine with the exact `Ansible Chris made me do it` payoff
+- Three dance routines with contextual variety instead of a single repeated dance loop
 - Event reactions for removable drives, low battery, and focused window changes
 - Structured quote packs with enable/disable support and repeat suppression
+- App-title humor and Cisco joke packs integrated into the contextual quote system
 - Context-aware mini-scenarios and gag chains such as Busy IT Morning, Homelab Troubleshooting, Network Victory Lap, Responsible Adult Moment, and Office Chaos
 - Context-aware toy system with tricycle, rubber duck, tiny homelab server cart, and stress ball interactions
 - Lightweight rare-event system for low-frequency special moments
@@ -71,7 +74,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.5.0.exe` for the installer
+   - `NPCJason_Setup_1.6.0.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -81,7 +84,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 | Left-click | Dance + say something |
 | Right-click | Open the quick menu |
 | Click + drag | Move Jason anywhere |
-| Tray icon | Show/Hide, settings, skins, toys, scenarios, quote packs, discoveries, mute, special modes, updates, summon/dismiss pets |
+| Tray icon | Show/Hide, settings, skins, companion controls, toys, scenarios, quote packs, discoveries, mute, special modes, updates, summon/dismiss pets |
 
 ### Custom sayings
 

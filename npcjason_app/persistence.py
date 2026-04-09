@@ -146,6 +146,10 @@ def sanitize_settings_payload(payload):
     global_out["rare_events_enabled"] = _coerce_bool(global_in.get("rare_events_enabled"), global_out["rare_events_enabled"])
     global_out["chaos_mode"] = _coerce_bool(global_in.get("chaos_mode"), global_out["chaos_mode"])
     global_out["movement_enabled"] = _coerce_bool(global_in.get("movement_enabled"), global_out["movement_enabled"])
+    global_out["companion_enabled"] = _coerce_bool(global_in.get("companion_enabled"), global_out["companion_enabled"])
+    global_out["selected_companion"] = _coerce_str(
+        global_in.get("selected_companion", global_out["selected_companion"])
+    ).strip() or global_out["selected_companion"]
     global_out["unlocks_enabled"] = _coerce_bool(global_in.get("unlocks_enabled"), global_out["unlocks_enabled"])
     seasonal_mode = _coerce_str(global_in.get("seasonal_mode_override", global_out["seasonal_mode_override"])).strip()
     global_out["seasonal_mode_override"] = seasonal_mode or global_out["seasonal_mode_override"]

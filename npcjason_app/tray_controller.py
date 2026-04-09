@@ -37,6 +37,23 @@ class TrayPetOption:
 
 
 @dataclass
+class TrayCompanionOption:
+    key: str
+    label: str
+    enabled: bool = True
+    selected: bool = False
+    state_label: str = ""
+
+
+@dataclass
+class TrayCompanionInteractionOption:
+    key: str
+    label: str
+    cooldown_ms: int = 0
+    active: bool = False
+
+
+@dataclass
 class TrayToyOption:
     key: str
     label: str
@@ -81,11 +98,16 @@ class TrayState:
     rare_events_enabled: bool = True
     chaos_mode: bool = False
     movement_enabled: bool = True
+    companion_enabled: bool = True
+    companion_label: str = ""
+    companion_state_label: str = ""
     unlocks_enabled: bool = True
     active_toy_label: str = ""
     active_scenario_label: str = ""
     seasonal_mode_label: str = "Auto"
     skin_options: List[TraySkinOption] = field(default_factory=list)
+    companion_options: List[TrayCompanionOption] = field(default_factory=list)
+    companion_interactions: List[TrayCompanionInteractionOption] = field(default_factory=list)
     toy_options: List[TrayToyOption] = field(default_factory=list)
     quote_packs: List[TrayQuotePackOption] = field(default_factory=list)
     scenario_options: List[TrayScenarioOption] = field(default_factory=list)
@@ -111,6 +133,9 @@ class TrayActions:
     toggle_rare_events: Callable
     toggle_chaos_mode: Callable
     toggle_movement: Callable
+    toggle_companion: Callable
+    select_companion: Callable
+    trigger_companion_interaction: Callable
     toggle_unlocks: Callable
     trigger_toy: Callable
     trigger_quote: Callable
@@ -140,7 +165,12 @@ def build_tray_snapshot(state):
         "rare_events_enabled": bool(state.rare_events_enabled),
         "chaos_mode": bool(state.chaos_mode),
         "movement_enabled": bool(state.movement_enabled),
+        "companion_enabled": bool(state.companion_enabled),
+        "companion_label": state.companion_label,
+        "companion_state": state.companion_state_label,
         "unlocks_enabled": bool(state.unlocks_enabled),
+        "companion_labels": [companion.label for companion in state.companion_options],
+        "companion_interactions": [interaction.label for interaction in state.companion_interactions],
         "toy_labels": [toy.label for toy in state.toy_options],
         "quote_packs": [pack.label for pack in state.quote_packs],
         "scenario_labels": [scenario.label for scenario in state.scenario_options],
@@ -281,6 +311,29 @@ class TrayController:
             )
             for scenario in state.scenario_options
         ]
+        companion_items = [
+            item(
+                companion.label,
+                self._dispatch(self.actions.select_companion, companion.key),
+                checked=lambda menu_item, chosen=companion.key: any(
+                    option.key == chosen and option.selected
+                    for option in self.state_provider().companion_options
+                ),
+                radio=True,
+            )
+            for companion in state.companion_options
+        ]
+        companion_interaction_items = [
+            item(
+                interaction.label if interaction.cooldown_ms <= 0 else f"{interaction.label} ({max(1, interaction.cooldown_ms // 1000)}s)",
+                self._dispatch(self.actions.trigger_companion_interaction, interaction.key),
+                enabled=lambda menu_item, chosen=interaction.key: any(
+                    option.key == chosen and option.cooldown_ms <= 0 and not option.active
+                    for option in self.state_provider().companion_interactions
+                ),
+            )
+            for interaction in state.companion_interactions
+        ]
         seasonal_items = [
             item(
                 option.label,
@@ -305,6 +358,33 @@ class TrayController:
                 else pystray.Menu(item("No scenarios", lambda icon, menu_item: None, enabled=False)),
             ),
             item("Dance!", self._dispatch(self.actions.dance)),
+            item(
+                "Companion",
+                pystray.Menu(
+                    item("Show Companion", self._dispatch(self.actions.toggle_companion), checked=lambda menu_item: self.state_provider().companion_enabled),
+                    item(
+                        lambda menu_item: (
+                            f"{self.state_provider().companion_label} | {self.state_provider().companion_state_label}"
+                            if self.state_provider().companion_label
+                            else "No companion selected"
+                        ),
+                        lambda icon, menu_item: None,
+                        enabled=False,
+                    ),
+                    item(
+                        "Choose Companion",
+                        pystray.Menu(*companion_items)
+                        if companion_items
+                        else pystray.Menu(item("No companions", lambda icon, menu_item: None, enabled=False)),
+                    ),
+                    item(
+                        "Interactions",
+                        pystray.Menu(*companion_interaction_items)
+                        if companion_interaction_items
+                        else pystray.Menu(item("No interactions", lambda icon, menu_item: None, enabled=False)),
+                    ),
+                ),
+            ),
             item("Trigger Quote", self._dispatch(self.actions.trigger_quote)),
             item("Quote Packs", pystray.Menu(*quote_pack_items) if quote_pack_items else pystray.Menu(item("No packs", lambda icon, menu_item: None, enabled=False))),
             item(

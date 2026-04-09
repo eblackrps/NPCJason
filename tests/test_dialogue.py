@@ -138,6 +138,36 @@ class DialogueTests(unittest.TestCase):
             self.assertTrue(library.set_pack_enabled("quiet-pack", True))
             self.assertTrue(library.pack_enabled("quiet-pack"))
 
+    def test_dialogue_library_accepts_companion_and_dance_tokens(self):
+        with workspace_tempdir() as temp_dir:
+            packs_dir = Path(temp_dir)
+            (packs_dir / "pack.json").write_text(
+                """
+                {
+                  "key": "companion-pack",
+                  "label": "Companion Pack",
+                  "quotes": [
+                    {"text": "{companion} approved the {dance_routine} routine."}
+                  ]
+                }
+                """,
+                encoding="utf-8",
+            )
+            library = DialogueLibrary(
+                sayings_path=packs_dir / "missing.txt",
+                packs_dir=packs_dir,
+                pack_states={"builtin-general": False, "builtin-moods": False},
+            )
+
+            self.assertEqual([], library.warnings)
+
+    def test_repo_dialogue_packs_include_title_and_cisco_humor(self):
+        library = DialogueLibrary()
+        pack_keys = {pack["key"] for pack in library.available_packs()}
+
+        self.assertIn("app-title-humor", pack_keys)
+        self.assertIn("cisco-jokes", pack_keys)
+
 
 if __name__ == "__main__":
     unittest.main()

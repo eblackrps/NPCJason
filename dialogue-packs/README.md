@@ -7,7 +7,7 @@ Legacy `.txt` packs:
 - Separate sayings with a blank line
 - Optional mood sections: `[any]`, `[happy]`, `[tired]`, `[caffeinated]`
 - Lines starting with `#` or `;` are treated as comments
-- Placeholders like `{pet_name}`, `{mood}`, `{time}`, `{date}`, `{active_window}`, `{battery_percent}`, `{skin}`, and `{other_pet_name}` are filled in automatically when available
+- Placeholders like `{pet_name}`, `{mood}`, `{time}`, `{date}`, `{active_window}`, `{battery_percent}`, `{skin}`, `{companion}`, `{dance_routine}`, and `{other_pet_name}` are filled in automatically when available
 - Unknown placeholders are left alone, so literal braces in jokes are still safe
 - Unknown section headers are treated as `[any]` and reported as warnings
 - Files that cannot be decoded or read are skipped with a warning

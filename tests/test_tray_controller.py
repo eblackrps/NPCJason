@@ -1,6 +1,8 @@
 import unittest
 
 from npcjason_app.tray_controller import (
+    TrayCompanionInteractionOption,
+    TrayCompanionOption,
     TrayPetOption,
     TrayQuotePackOption,
     TrayScenarioOption,
@@ -24,11 +26,20 @@ class TrayControllerTests(unittest.TestCase):
             rare_events_enabled=False,
             chaos_mode=True,
             movement_enabled=False,
+            companion_enabled=True,
+            companion_label="Mouse Sidekick",
+            companion_state_label="Waiting",
             unlocks_enabled=False,
             active_toy_label="Rubber Duck",
             skin_options=[
                 TraySkinOption(key="jason", label="Classic Jason"),
                 TraySkinOption(key="wizard", label="Wizard Jason"),
+            ],
+            companion_options=[
+                TrayCompanionOption(key="mouse", label="Mouse Sidekick", enabled=True, selected=True, state_label="Waiting"),
+            ],
+            companion_interactions=[
+                TrayCompanionInteractionOption(key="feed-cheese", label="Feed Cheese", cooldown_ms=0, active=False),
             ],
             toy_options=[TrayToyOption(key="rubber-duck", label="Rubber Duck", cooldown_ms=0, active=True)],
             quote_packs=[TrayQuotePackOption(key="jason-quotes", label="Jason Quote Pack", enabled=True)],
@@ -50,6 +61,11 @@ class TrayControllerTests(unittest.TestCase):
         self.assertEqual(["Rubber Duck"], snapshot["toy_labels"])
         self.assertEqual(["Jason Quote Pack"], snapshot["quote_packs"])
         self.assertEqual(["Office Chaos"], snapshot["scenario_labels"])
+        self.assertTrue(snapshot["companion_enabled"])
+        self.assertEqual("Mouse Sidekick", snapshot["companion_label"])
+        self.assertEqual("Waiting", snapshot["companion_state"])
+        self.assertEqual(["Mouse Sidekick"], snapshot["companion_labels"])
+        self.assertEqual(["Feed Cheese"], snapshot["companion_interactions"])
         self.assertEqual("Monday Morning Survival", snapshot["seasonal_mode"])
         self.assertFalse(snapshot["rare_events_enabled"])
         self.assertTrue(snapshot["chaos_mode"])

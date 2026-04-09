@@ -51,6 +51,8 @@ class GlobalSettings:
     rare_events_enabled: bool = True
     chaos_mode: bool = False
     movement_enabled: bool = True
+    companion_enabled: bool = True
+    selected_companion: str = "mouse"
     unlocks_enabled: bool = True
     seasonal_mode_override: str = "auto"
     last_active_season: str = ""
@@ -194,6 +196,8 @@ class SettingsService:
             rare_events_enabled=bool(global_settings.get("rare_events_enabled", True)),
             chaos_mode=bool(global_settings.get("chaos_mode", False)),
             movement_enabled=bool(global_settings.get("movement_enabled", True)),
+            companion_enabled=bool(global_settings.get("companion_enabled", True)),
+            selected_companion=str(global_settings.get("selected_companion", "mouse")).strip() or "mouse",
             unlocks_enabled=bool(global_settings.get("unlocks_enabled", True)),
             seasonal_mode_override=str(global_settings.get("seasonal_mode_override", "auto")).strip() or "auto",
             last_active_season=str(global_settings.get("last_active_season", "")).strip(),
@@ -264,6 +268,8 @@ class SettingsService:
             data["global"]["rare_events_enabled"] = bool(global_settings.rare_events_enabled)
             data["global"]["chaos_mode"] = bool(global_settings.chaos_mode)
             data["global"]["movement_enabled"] = bool(global_settings.movement_enabled)
+            data["global"]["companion_enabled"] = bool(global_settings.companion_enabled)
+            data["global"]["selected_companion"] = str(global_settings.selected_companion or "mouse")
             data["global"]["unlocks_enabled"] = bool(global_settings.unlocks_enabled)
             data["global"]["seasonal_mode_override"] = str(global_settings.seasonal_mode_override or "auto")
             data["global"]["last_active_season"] = str(global_settings.last_active_season or "")

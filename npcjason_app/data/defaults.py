@@ -1,4 +1,4 @@
-SETTINGS_SCHEMA_VERSION = 5
+SETTINGS_SCHEMA_VERSION = 6
 SHARED_STATE_SCHEMA_VERSION = 1
 
 MOODS = {
@@ -35,6 +35,8 @@ def default_settings():
             "rare_events_enabled": True,
             "chaos_mode": False,
             "movement_enabled": True,
+            "companion_enabled": True,
+            "selected_companion": "mouse",
             "unlocks_enabled": True,
             "seasonal_mode_override": "auto",
             "last_active_season": "",

@@ -1,0 +1,79 @@
+{
+  "key": "cisco-jokes",
+  "label": "Cisco Jokes",
+  "description": "Dry networking jokes for routing days, Cisco titles, and suspiciously confident victory laps.",
+  "weight": 1,
+  "enabled": true,
+  "categories": [
+    "network",
+    "cisco"
+  ],
+  "affinity": {
+    "contexts": [
+      "title-cisco",
+      "title-networking",
+      "title-homelab",
+      "dance-victory-stomp",
+      "scenario",
+      "network"
+    ],
+    "categories": [
+      "network",
+      "cisco"
+    ],
+    "skins": [
+      "network",
+      "homelab",
+      "astronaut"
+    ],
+    "tags": [
+      "network",
+      "routing",
+      "infra"
+    ]
+  },
+  "quotes": [
+    "Smart Licensing has entered the room.\nMorale has left.",
+    "This feels like the part where Cisco says the feature is supported in spirit.",
+    "I respect the CLI.\nI do not respect what the licensing portal is doing.",
+    "Somewhere a Catalyst is blinking like it knows what you changed.",
+    "Meraki dashboard moment.\nHope you enjoy waiting confidently.",
+    "The config is fine.\nThe part that is on fire is everything around the config.",
+    "ASA rule logic has become an interpretive art form.",
+    "Packet Tracer confidence is not production confidence.",
+    "If Firepower wanted me relaxed,\nit picked a strange strategy.",
+    "ISE is asking for another step.\nThat seems on brand.",
+    "This routing table has strong 'we'll circle back' energy.",
+    "I can smell a mismatched native VLAN from here.",
+    "The switch stack is either healthy or acting healthy for management.",
+    "Today's Cisco joke is that the docs said 'simple.'",
+    {
+      "text": "I saw '{title}'.\nThat is absolutely a Cisco situation.",
+      "categories": [
+        "network",
+        "cisco",
+        "title"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-cisco",
+          "title-networking"
+        ]
+      }
+    },
+    {
+      "text": "'{title}' sounds like something that will ask for another reboot.",
+      "categories": [
+        "network",
+        "cisco",
+        "title"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-cisco",
+          "title-homelab"
+        ]
+      }
+    }
+  ]
+}

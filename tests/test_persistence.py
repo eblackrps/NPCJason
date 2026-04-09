@@ -14,6 +14,8 @@ class PersistenceTests(unittest.TestCase):
                 "rare_events_enabled": "no",
                 "chaos_mode": "yes",
                 "movement_enabled": "off",
+                "companion_enabled": "false",
+                "selected_companion": " mouse ",
                 "unlocks_enabled": "on",
                 "seasonal_mode_override": " monday-morning-survival ",
                 "reactions": {"usb": "false", "updates": "true"},
@@ -51,6 +53,8 @@ class PersistenceTests(unittest.TestCase):
         self.assertFalse(sanitized["global"]["rare_events_enabled"])
         self.assertTrue(sanitized["global"]["chaos_mode"])
         self.assertFalse(sanitized["global"]["movement_enabled"])
+        self.assertFalse(sanitized["global"]["companion_enabled"])
+        self.assertEqual("mouse", sanitized["global"]["selected_companion"])
         self.assertTrue(sanitized["global"]["unlocks_enabled"])
         self.assertEqual("monday-morning-survival", sanitized["global"]["seasonal_mode_override"])
         self.assertFalse(sanitized["global"]["reactions"]["usb"])
@@ -93,7 +97,7 @@ class PersistenceTests(unittest.TestCase):
         settings, settings_warnings = sanitize_settings_payload({"schema_version": 1})
         shared_state, shared_warnings = sanitize_shared_state_payload({"schema_version": 99})
 
-        self.assertEqual(5, settings["schema_version"])
+        self.assertEqual(6, settings["schema_version"])
         self.assertEqual(1, shared_state["schema_version"])
         self.assertTrue(any("schema upgraded" in warning for warning in settings_warnings))
         self.assertTrue(any("newer than supported" in warning for warning in shared_warnings))
