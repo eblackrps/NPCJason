@@ -45,7 +45,10 @@ class GlobalSettings:
     auto_antics_min_minutes: int = 4
     auto_antics_max_minutes: int = 9
     auto_antics_dance_chance: int = 55
+    rare_events_enabled: bool = True
+    chaos_mode: bool = False
     reaction_toggles: Dict[str, bool] = field(default_factory=dict)
+    quote_pack_states: Dict[str, bool] = field(default_factory=dict)
     favorite_templates: List[str] = field(default_factory=list)
     recent_sayings: List[dict] = field(default_factory=list)
 
@@ -126,7 +129,14 @@ class SettingsService:
             auto_antics_min_minutes=int(global_settings.get("auto_antics_min_minutes", 4)),
             auto_antics_max_minutes=int(global_settings.get("auto_antics_max_minutes", 9)),
             auto_antics_dance_chance=int(global_settings.get("auto_antics_dance_chance", 55)),
+            rare_events_enabled=bool(global_settings.get("rare_events_enabled", True)),
+            chaos_mode=bool(global_settings.get("chaos_mode", False)),
             reaction_toggles={**reaction_defaults, **dict(global_settings.get("reactions", {}))},
+            quote_pack_states={
+                str(key).strip(): bool(value)
+                for key, value in dict(global_settings.get("quote_pack_states", {})).items()
+                if str(key).strip()
+            },
             favorite_templates=[
                 str(item).strip()
                 for item in global_settings.get("favorite_sayings", [])
@@ -169,7 +179,10 @@ class SettingsService:
             data["global"]["auto_antics_min_minutes"] = int(global_settings.auto_antics_min_minutes)
             data["global"]["auto_antics_max_minutes"] = int(global_settings.auto_antics_max_minutes)
             data["global"]["auto_antics_dance_chance"] = int(global_settings.auto_antics_dance_chance)
+            data["global"]["rare_events_enabled"] = bool(global_settings.rare_events_enabled)
+            data["global"]["chaos_mode"] = bool(global_settings.chaos_mode)
             data["global"]["reactions"] = dict(global_settings.reaction_toggles)
+            data["global"]["quote_pack_states"] = dict(global_settings.quote_pack_states)
             data["global"]["favorite_sayings"] = list(global_settings.favorite_templates[-30:])
             data["global"]["recent_sayings"] = list(global_settings.recent_sayings[-30:])
             data["instances"][pet_id] = {

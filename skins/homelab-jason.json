@@ -1,0 +1,102 @@
+{
+  "key": "homelab",
+  "label": "Homelab Jason",
+  "author": "NPCJason",
+  "description": "A hoodie-and-LED variant built for late-night self-hosting decisions and suspiciously tiny rack dreams.",
+  "version": "2.0",
+  "palette": {
+    "T": "#2f4858",
+    "P": "#1b2634",
+    "D": "#18212e",
+    "G": "#4ade80"
+  },
+  "tray": {
+    "hair": "#18212e",
+    "body": "#2f4858",
+    "legs": "#1b2634"
+  },
+  "tags": [
+    "homelab",
+    "self-hosting",
+    "tinkering"
+  ],
+  "sound_set": "homelab",
+  "quote_affinity": {
+    "packs": [
+      "jason-quotes"
+    ],
+    "categories": [
+      "homelab",
+      "network"
+    ],
+    "contexts": [
+      "gear",
+      "desk"
+    ]
+  },
+  "accessory_offsets": {
+    "bubble": {
+      "x": -2,
+      "y": -6
+    },
+    "toy_anchor": {
+      "x": 2,
+      "y": 46
+    },
+    "carry": {
+      "x": 2,
+      "y": 30
+    }
+  },
+  "animations": {
+    "idle": [
+      {
+        "frame": "idle_open",
+        "offset_y": 0,
+        "delay_ms": 260
+      },
+      {
+        "frame": "idle_breathe_in",
+        "offset_y": -1,
+        "delay_ms": 235
+      },
+      {
+        "frame": "idle_open",
+        "offset_y": 0,
+        "delay_ms": 245
+      },
+      {
+        "frame": "idle_breathe_out",
+        "offset_y": 1,
+        "delay_ms": 235
+      },
+      {
+        "frame": "idle_blink",
+        "offset_y": 0,
+        "delay_ms": 220
+      }
+    ]
+  },
+  "overlay": [
+    "................",
+    "....DDDDDD......",
+    "...DDDDDDDD.....",
+    "...D......D.....",
+    "....DGGGGD......",
+    "................",
+    "......GG........",
+    ".....G..G.......",
+    "................",
+    "................",
+    "......G..G......",
+    ".......GG.......",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................"
+  ]
+}

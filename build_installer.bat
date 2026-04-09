@@ -12,7 +12,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/6] Validating installed dependencies...
+echo [2/7] Validating installed dependencies...
 python -m pip check
 if errorlevel 1 (
     echo ERROR: pip dependency check failed.
@@ -58,6 +58,8 @@ if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
     set ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe
 ) else if exist "C:\Program Files\Inno Setup 6\ISCC.exe" (
     set ISCC=C:\Program Files\Inno Setup 6\ISCC.exe
+ ) else if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" (
+    set ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
 )
 
 if not defined ISCC (
@@ -67,7 +69,9 @@ if not defined ISCC (
     echo.
     echo   To build the installer manually:
     echo     1. Install Inno Setup 6 from https://jrsoftware.org/isinfo.php
-    echo     2. Run: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+    echo     2. Run: one of:
+    echo          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+    echo          "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" installer.iss
     echo.
     pause
     exit /b 0

@@ -11,7 +11,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [2/5] Validating installed dependencies...
+echo [2/6] Validating installed dependencies...
 python -m pip check
 if errorlevel 1 (
     echo ERROR: pip dependency check failed.

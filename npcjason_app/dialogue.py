@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
 from pathlib import Path
 import random
 import re
@@ -117,11 +121,53 @@ ALLOWED_TEMPLATE_TOKENS = {
     "active_window",
     "battery_percent",
     "skin",
+    "skin_key",
     "label",
     "percent",
     "title",
+    "toy",
     "version",
 }
+AFFINITY_KEYS = ("skins", "tags", "contexts", "toys", "moods", "packs", "categories")
+
+
+@dataclass(frozen=True)
+class QuoteEntry:
+    text: str
+    moods: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
+    weight: int = 1
+    affinity: dict | None = None
+
+    @property
+    def normalized_affinity(self):
+        return dict(self.affinity or {key: [] for key in AFFINITY_KEYS})
+
+
+@dataclass(frozen=True)
+class QuotePack:
+    key: str
+    label: str
+    description: str
+    source: str
+    weight: int = 1
+    enabled_by_default: bool = True
+    categories: tuple[str, ...] = ()
+    affinity: dict | None = None
+    quotes: tuple[QuoteEntry, ...] = ()
+
+    @property
+    def normalized_affinity(self):
+        return dict(self.affinity or {key: [] for key in AFFINITY_KEYS})
+
+
+@dataclass(frozen=True)
+class DialogueChoice:
+    template: str
+    pack_key: str
+    pack_label: str
+    source: str
+    categories: tuple[str, ...] = ()
 
 
 def empty_pool():
@@ -213,12 +259,242 @@ def render_template(text, context=None):
     return TOKEN_PATTERN.sub(replace, str(text))
 
 
+def _normalize_string_list(value):
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = list(value)
+    else:
+        values = [value]
+    normalized = []
+    seen = set()
+    for item in values:
+        text = str(item).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        normalized.append(text)
+    return normalized
+
+
+def _normalize_affinity(value, warnings, source_name, field_name):
+    if value is None:
+        return {key: [] for key in AFFINITY_KEYS}
+    if not isinstance(value, dict):
+        warnings.append(f"{source_name}: '{field_name}' must be an object")
+        return {key: [] for key in AFFINITY_KEYS}
+    return {key: _normalize_string_list(value.get(key, [])) for key in AFFINITY_KEYS}
+
+
+def _build_entry(raw_text, source_name, warnings, moods=None, categories=None, weight=1, affinity=None):
+    text = str(raw_text)
+    if not text.strip():
+        return None
+    unknown_tokens = unknown_template_tokens(text)
+    if unknown_tokens:
+        warnings.append(f"{source_name}: unknown template token(s) {', '.join(unknown_tokens)}")
+    return QuoteEntry(
+        text=text,
+        moods=tuple(_normalize_string_list(moods)),
+        categories=tuple(_normalize_string_list(categories)),
+        weight=max(1, int(weight)),
+        affinity=_normalize_affinity(affinity, warnings, source_name, "entry.affinity"),
+    )
+
+
+def _legacy_pool_to_entries(parsed_pool, source_name, warnings):
+    entries = []
+    for mood_key, sayings in parsed_pool.items():
+        for saying in sayings:
+            entry = _build_entry(
+                saying,
+                source_name,
+                warnings,
+                moods=[] if mood_key == "any" else [mood_key],
+                categories=["legacy", mood_key],
+                weight=1,
+                affinity=None,
+            )
+            if entry is not None:
+                entries.append(entry)
+    return entries
+
+
+def _pack_key_from_path(path):
+    stem = path.stem.strip().lower().replace(" ", "-")
+    return stem or "quotes"
+
+
+def _label_from_key(key):
+    return " ".join(part.capitalize() for part in str(key).replace("_", "-").split("-") if part)
+
+
+def _parse_json_pack(path):
+    warnings = []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None, [f"{path.name}: could not parse JSON"]
+
+    if not isinstance(payload, dict):
+        return None, [f"{path.name}: quote pack must be a JSON object"]
+
+    key = str(payload.get("key", _pack_key_from_path(path))).strip() or _pack_key_from_path(path)
+    label = str(payload.get("label", _label_from_key(key))).strip() or _label_from_key(key)
+    description = str(payload.get("description", "")).strip()
+    try:
+        weight = max(1, int(payload.get("weight", 1)))
+    except (TypeError, ValueError):
+        warnings.append(f"{path.name}: invalid pack weight; defaulting to 1")
+        weight = 1
+    enabled_by_default = bool(payload.get("enabled", True))
+    categories = tuple(_normalize_string_list(payload.get("categories", [])))
+    affinity = _normalize_affinity(payload.get("affinity"), warnings, path.name, "affinity")
+
+    quotes_raw = payload.get("quotes", [])
+    if not isinstance(quotes_raw, list):
+        warnings.append(f"{path.name}: 'quotes' must be a list")
+        quotes_raw = []
+
+    quotes = []
+    for index, entry in enumerate(quotes_raw):
+        if isinstance(entry, str):
+            quote = _build_entry(
+                entry,
+                path.name,
+                warnings,
+                categories=categories,
+            )
+        elif isinstance(entry, dict):
+            raw_text = entry.get("text", "")
+            try:
+                entry_weight = max(1, int(entry.get("weight", 1)))
+            except (TypeError, ValueError):
+                warnings.append(f"{path.name}: invalid weight for quote {index}; defaulting to 1")
+                entry_weight = 1
+            quote = _build_entry(
+                raw_text,
+                path.name,
+                warnings,
+                moods=entry.get("moods", []),
+                categories=list(categories) + _normalize_string_list(entry.get("categories", [])),
+                weight=entry_weight,
+                affinity=entry.get("affinity"),
+            )
+        else:
+            warnings.append(f"{path.name}: quote {index} must be a string or object")
+            quote = None
+        if quote is not None:
+            quotes.append(quote)
+
+    return QuotePack(
+        key=key,
+        label=label,
+        description=description,
+        source=path.name,
+        weight=weight,
+        enabled_by_default=enabled_by_default,
+        categories=categories,
+        affinity=affinity,
+        quotes=tuple(quotes),
+    ), warnings
+
+
+def _parse_legacy_pack(path):
+    try:
+        parsed, warnings = parse_dialogue_source(path.read_text(encoding="utf-8"), source_name=path.name)
+    except (OSError, UnicodeDecodeError):
+        return None, [f"{path.name}: could not be read"]
+
+    entries = _legacy_pool_to_entries(parsed, path.name, warnings)
+    return QuotePack(
+        key=_pack_key_from_path(path),
+        label=_label_from_key(_pack_key_from_path(path)),
+        description="Legacy text-based dialogue pack.",
+        source=path.name,
+        weight=1,
+        enabled_by_default=True,
+        categories=("legacy",),
+        affinity={key: [] for key in AFFINITY_KEYS},
+        quotes=tuple(entries),
+    ), warnings
+
+
+def _built_in_packs():
+    general_quotes = tuple(
+        QuoteEntry(
+            text=line,
+            categories=("builtin", "ambient"),
+            weight=1,
+            affinity={key: [] for key in AFFINITY_KEYS},
+        )
+        for line in GENERAL_SAYINGS
+    )
+    mood_quotes = []
+    for mood_key, lines in MOOD_SAYINGS.items():
+        for line in lines:
+            mood_quotes.append(
+                QuoteEntry(
+                    text=line,
+                    moods=(mood_key,),
+                    categories=("builtin", "mood", mood_key),
+                    weight=1,
+                    affinity={key: [] for key in AFFINITY_KEYS},
+                )
+            )
+    return {
+        "builtin-general": QuotePack(
+            key="builtin-general",
+            label="Built-in Ambient",
+            description="Core NPCJason ambient lines.",
+            source="builtin",
+            weight=1,
+            enabled_by_default=True,
+            categories=("builtin", "ambient"),
+            affinity={key: [] for key in AFFINITY_KEYS},
+            quotes=general_quotes,
+        ),
+        "builtin-moods": QuotePack(
+            key="builtin-moods",
+            label="Built-in Mood Lines",
+            description="Mood-specific built-in lines.",
+            source="builtin",
+            weight=1,
+            enabled_by_default=True,
+            categories=("builtin", "mood"),
+            affinity={key: [] for key in AFFINITY_KEYS},
+            quotes=tuple(mood_quotes),
+        ),
+    }
+
+
+def _weighted_choice(weighted_items, rng):
+    total = sum(weight for _item, weight in weighted_items)
+    if total <= 0:
+        return weighted_items[0][0]
+    target = rng.uniform(0, total)
+    cumulative = 0.0
+    for item, weight in weighted_items:
+        cumulative += weight
+        if target <= cumulative:
+            return item
+    return weighted_items[-1][0]
+
+
 class DialogueLibrary:
-    def __init__(self, sayings_path=RESOURCE_SAYINGS_PATH, packs_dir=RESOURCE_DIALOGUE_PACKS_DIR):
+    def __init__(self, sayings_path=RESOURCE_SAYINGS_PATH, packs_dir=RESOURCE_DIALOGUE_PACKS_DIR, pack_states=None):
         self.sayings_path = Path(sayings_path)
         self.packs_dir = Path(packs_dir)
+        pack_states = pack_states if isinstance(pack_states, dict) else {}
+        self.pack_states = {
+            str(key).strip(): bool(value)
+            for key, value in dict(pack_states or {}).items()
+            if str(key).strip()
+        }
         self._signature = None
-        self._custom_pool = empty_pool()
+        self._packs = {}
         self.warnings = []
         self.reload_if_needed(force=True)
 
@@ -227,7 +503,10 @@ class DialogueLibrary:
         if self.sayings_path.exists():
             files.append(self.sayings_path)
         if self.packs_dir.exists():
-            files.extend(sorted(path for path in self.packs_dir.glob("*.txt") if path.is_file()))
+            txt_packs = sorted(path for path in self.packs_dir.glob("*.txt") if path.is_file())
+            json_packs = sorted(path for path in self.packs_dir.glob("*.json") if path.is_file())
+            files.extend(txt_packs)
+            files.extend(json_packs)
         return files
 
     def _compute_signature(self):
@@ -240,40 +519,172 @@ class DialogueLibrary:
             signature.append((str(path), stat.st_mtime_ns, stat.st_size))
         return tuple(signature)
 
+    def set_pack_states(self, pack_states):
+        pack_states = pack_states if isinstance(pack_states, dict) else {}
+        self.pack_states = {
+            str(key).strip(): bool(value)
+            for key, value in dict(pack_states or {}).items()
+            if str(key).strip()
+        }
+
+    def pack_state_overrides(self):
+        return dict(self.pack_states)
+
+    def pack_enabled(self, pack_key):
+        pack = self._packs.get(pack_key)
+        if not pack:
+            return False
+        if pack_key in self.pack_states:
+            return bool(self.pack_states[pack_key])
+        return bool(pack.enabled_by_default)
+
+    def set_pack_enabled(self, pack_key, enabled):
+        pack = self._packs.get(pack_key)
+        if pack is None:
+            return False
+        enabled = bool(enabled)
+        if enabled == bool(pack.enabled_by_default):
+            self.pack_states.pop(pack_key, None)
+        else:
+            self.pack_states[pack_key] = enabled
+        return True
+
+    def available_packs(self):
+        packs = []
+        for pack in sorted(self._packs.values(), key=lambda value: (value.source, value.label.lower())):
+            packs.append(
+                {
+                    "key": pack.key,
+                    "label": pack.label,
+                    "description": pack.description,
+                    "enabled": self.pack_enabled(pack.key),
+                    "weight": pack.weight,
+                    "quote_count": len(pack.quotes),
+                    "source": pack.source,
+                    "categories": list(pack.categories),
+                }
+            )
+        return packs
+
     def reload_if_needed(self, force=False):
         signature = self._compute_signature()
         if not force and signature == self._signature:
             return False
 
-        pools = []
         warnings = []
-        for path in self._iter_files():
-            try:
-                parsed, parse_warnings = parse_dialogue_source(
-                    path.read_text(encoding="utf-8"),
-                    source_name=path.name,
-                )
-                pools.append(parsed)
-                warnings.extend(parse_warnings)
-            except (OSError, UnicodeDecodeError):
-                warnings.append(f"{path.name}: could not be read")
-                continue
+        packs = dict(_built_in_packs())
 
-        self._custom_pool = merge_pools(*pools) if pools else empty_pool()
+        for path in self._iter_files():
+            if path.suffix.lower() == ".json":
+                pack, pack_warnings = _parse_json_pack(path)
+            else:
+                pack, pack_warnings = _parse_legacy_pack(path)
+            warnings.extend(pack_warnings)
+            if pack is None:
+                continue
+            if pack.key in packs:
+                warnings.append(f"{path.name}: overriding existing quote pack key '{pack.key}'")
+            packs[pack.key] = pack
+
+        self._packs = packs
         self._signature = signature
         self.warnings = warnings
         return True
 
-    def ambient_pool(self, mood):
-        pool = list(GENERAL_SAYINGS)
-        pool.extend(MOOD_SAYINGS.get(mood, []))
-        pool.extend(self._custom_pool.get("any", []))
-        pool.extend(self._custom_pool.get(mood, []))
-        return pool or ["Still loading personality module."]
+    def _ambient_candidates(self, mood, context=None):
+        context = context or {}
+        candidates = []
+        for pack in self._packs.values():
+            if not self.pack_enabled(pack.key):
+                continue
+            for quote in pack.quotes:
+                if quote.moods and mood not in quote.moods:
+                    continue
+                weight = self._candidate_weight(pack, quote, mood, context)
+                if weight <= 0:
+                    continue
+                categories = tuple(sorted(set(pack.categories) | set(quote.categories)))
+                candidates.append(
+                    (
+                        DialogueChoice(
+                            template=quote.text,
+                            pack_key=pack.key,
+                            pack_label=pack.label,
+                            source=pack.source,
+                            categories=categories,
+                        ),
+                        weight,
+                    )
+                )
+        return candidates
 
-    def random_saying(self, mood, context=None):
+    def _candidate_weight(self, pack, quote, mood, context):
+        weight = max(1, int(pack.weight)) * max(1, int(quote.weight))
+
+        preferred_packs = set(_normalize_string_list(context.get("preferred_packs", [])))
+        preferred_categories = set(_normalize_string_list(context.get("preferred_categories", [])))
+        context_tags = set(_normalize_string_list(context.get("contexts", [])))
+        skin_key = str(context.get("skin_key", "")).strip()
+        skin_tags = set(_normalize_string_list(context.get("skin_tags", [])))
+        toy_key = str(context.get("toy", context.get("toy_key", ""))).strip()
+        mood_key = str(context.get("mood_key", mood)).strip() or mood
+
+        bonus = 1
+        if pack.key in preferred_packs:
+            bonus += 4
+        if preferred_categories & set(pack.categories):
+            bonus += 2
+        if preferred_categories & set(quote.categories):
+            bonus += 3
+
+        bonus += self._affinity_bonus(pack.normalized_affinity, skin_key, skin_tags, context_tags, toy_key, mood_key)
+        bonus += self._affinity_bonus(quote.normalized_affinity, skin_key, skin_tags, context_tags, toy_key, mood_key)
+        return weight * max(1, bonus)
+
+    @staticmethod
+    def _affinity_bonus(affinity, skin_key, skin_tags, context_tags, toy_key, mood_key):
+        bonus = 0
+        if skin_key and skin_key in affinity.get("skins", []):
+            bonus += 2
+        if toy_key and toy_key in affinity.get("toys", []):
+            bonus += 2
+        if mood_key and mood_key in affinity.get("moods", []):
+            bonus += 1
+        if skin_tags & set(affinity.get("tags", [])):
+            bonus += 2
+        if context_tags & set(affinity.get("contexts", [])):
+            bonus += 3
+        return bonus
+
+    def ambient_pool(self, mood, context=None):
         self.reload_if_needed()
-        return render_template(random.choice(self.ambient_pool(mood)), context)
+        return [choice.template for choice, _weight in self._ambient_candidates(mood, context)]
+
+    def pick_ambient(self, mood, context=None, recent_templates=None, rng=None):
+        self.reload_if_needed()
+        rng = rng or random
+        candidates = self._ambient_candidates(mood, context)
+        if not candidates:
+            return DialogueChoice(
+                template="Still loading personality module.",
+                pack_key="builtin-fallback",
+                pack_label="Fallback",
+                source="builtin",
+                categories=("builtin", "fallback"),
+            )
+
+        recent_templates = [str(template) for template in list(recent_templates or [])[-6:]]
+        recent_set = set(recent_templates)
+        if recent_set:
+            non_recent = [(choice, weight) for choice, weight in candidates if choice.template not in recent_set]
+            if non_recent:
+                candidates = non_recent
+
+        return _weighted_choice(candidates, rng)
+
+    def random_saying(self, mood, context=None, recent_templates=None, rng=None):
+        choice = self.pick_ambient(mood, context=context, recent_templates=recent_templates, rng=rng)
+        return render_template(choice.template, context)
 
     def format_event_text(self, event_key, **context):
         options = EVENT_SAYINGS.get(event_key)

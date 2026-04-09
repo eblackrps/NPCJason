@@ -10,7 +10,10 @@ class PersistenceTests(unittest.TestCase):
                 "sound_enabled": "yes",
                 "sound_volume": "loud",
                 "quiet_start_hour": 99,
+                "rare_events_enabled": "no",
+                "chaos_mode": "yes",
                 "reactions": {"usb": "false", "updates": "true"},
+                "disabled_quote_packs": [" jason-quotes ", "", "jason-quotes"],
                 "favorite_sayings": [" keep ", "", None],
                 "recent_sayings": ["line", {"text": "two", "timestamp": "3"}],
             },
@@ -25,8 +28,11 @@ class PersistenceTests(unittest.TestCase):
         self.assertTrue(sanitized["global"]["sound_enabled"])
         self.assertEqual(70, sanitized["global"]["sound_volume"])
         self.assertEqual(23, sanitized["global"]["quiet_start_hour"])
+        self.assertFalse(sanitized["global"]["rare_events_enabled"])
+        self.assertTrue(sanitized["global"]["chaos_mode"])
         self.assertFalse(sanitized["global"]["reactions"]["usb"])
         self.assertTrue(sanitized["global"]["reactions"]["updates"])
+        self.assertEqual({"jason-quotes": False}, sanitized["global"]["quote_pack_states"])
         self.assertEqual(["keep"], sanitized["global"]["favorite_sayings"])
         self.assertEqual(2, len(sanitized["global"]["recent_sayings"]))
         self.assertEqual("happy", sanitized["instances"]["main"]["mood"])
@@ -54,7 +60,7 @@ class PersistenceTests(unittest.TestCase):
         settings, settings_warnings = sanitize_settings_payload({"schema_version": 1})
         shared_state, shared_warnings = sanitize_shared_state_payload({"schema_version": 99})
 
-        self.assertEqual(2, settings["schema_version"])
+        self.assertEqual(4, settings["schema_version"])
         self.assertEqual(1, shared_state["schema_version"])
         self.assertTrue(any("schema upgraded" in warning for warning in settings_warnings))
         self.assertTrue(any("newer than supported" in warning for warning in shared_warnings))

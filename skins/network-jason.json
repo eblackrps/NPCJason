@@ -1,0 +1,98 @@
+{
+  "key": "network",
+  "label": "Network Jason",
+  "author": "NPCJason",
+  "description": "Headset on, routes in flight, and already side-eyeing your VLAN notes from across the taskbar.",
+  "version": "2.0",
+  "palette": {
+    "T": "#2a9d8f",
+    "P": "#1f3c4d",
+    "N": "#1d3557",
+    "V": "#8ecae6",
+    "D": "#0f172a"
+  },
+  "tray": {
+    "hair": "#1d3557",
+    "body": "#2a9d8f",
+    "legs": "#1f3c4d"
+  },
+  "tags": [
+    "network",
+    "routing",
+    "infra"
+  ],
+  "sound_set": "network",
+  "quote_affinity": {
+    "packs": [
+      "jason-quotes"
+    ],
+    "categories": [
+      "network",
+      "office"
+    ],
+    "contexts": [
+      "focus",
+      "gear"
+    ]
+  },
+  "accessory_offsets": {
+    "bubble": {
+      "x": 2,
+      "y": -4
+    },
+    "toy_anchor": {
+      "x": 0,
+      "y": 46
+    },
+    "carry": {
+      "x": 0,
+      "y": 30
+    }
+  },
+  "animations": {
+    "interaction": [
+      {
+        "frame": "dance2",
+        "delay_ms": 115
+      },
+      {
+        "frame": "dance3",
+        "delay_ms": 125
+      },
+      {
+        "frame": "dance1",
+        "delay_ms": 115
+      },
+      {
+        "frame": "dance3",
+        "delay_ms": 125
+      },
+      {
+        "frame": "dance2",
+        "delay_ms": 115
+      }
+    ]
+  },
+  "overlay": [
+    "................",
+    "......NN........",
+    ".....N..N.......",
+    "....N....N......",
+    ".....NNNN.......",
+    "................",
+    "......V.........",
+    "......V.........",
+    ".....VVV........",
+    "................",
+    "....V..V........",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................",
+    "................"
+  ]
+}

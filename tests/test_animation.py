@@ -22,6 +22,22 @@ class AnimationControllerTests(unittest.TestCase):
         self.assertTrue(all(frame.startswith("idle_") for frame in frames))
         self.assertGreater(len(set(frames)), 1)
 
+    def test_custom_sequences_are_used(self):
+        controller = AnimationController()
+        controller.set_sequences(
+            idle_sequence=[{"frame": "idle_blink", "offset_y": 2, "delay_ms": 300}],
+            interaction_sequence=[{"frame": "dance3", "offset_y": 1, "delay_ms": 140}],
+        )
+
+        idle = controller.next_frame("happy")
+        controller.start_dance()
+        interaction = controller.next_frame("happy")
+
+        self.assertEqual("idle_blink", idle.frame_key)
+        self.assertEqual(2, idle.offset_y)
+        self.assertEqual("dance3", interaction.frame_key)
+        self.assertEqual(1, interaction.offset_y)
+
 
 if __name__ == "__main__":
     unittest.main()

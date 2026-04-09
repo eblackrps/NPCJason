@@ -1,4 +1,4 @@
-SETTINGS_SCHEMA_VERSION = 2
+SETTINGS_SCHEMA_VERSION = 4
 SHARED_STATE_SCHEMA_VERSION = 1
 
 MOODS = {
@@ -26,6 +26,8 @@ def default_settings():
             "auto_antics_min_minutes": 4,
             "auto_antics_max_minutes": 9,
             "auto_antics_dance_chance": 55,
+            "rare_events_enabled": True,
+            "chaos_mode": False,
             "reactions": {
                 "usb": True,
                 "battery": True,
@@ -34,6 +36,7 @@ def default_settings():
                 "pet_chat": True,
                 "random_sayings": True,
             },
+            "quote_pack_states": {},
             "favorite_sayings": [],
             "recent_sayings": [],
         },

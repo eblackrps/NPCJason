@@ -54,6 +54,12 @@ def _coerce_str(value, default=""):
     return str(value)
 
 
+def _coerce_dict(value, default=None):
+    if isinstance(value, dict):
+        return value
+    return {} if default is None else dict(default)
+
+
 def _normalize_schema_version(payload, key, expected_version, label, warnings):
     version = payload.get(key, expected_version)
     coerced = _coerce_int(version, expected_version, 1)
@@ -107,6 +113,8 @@ def sanitize_settings_payload(payload):
     global_out["auto_antics_min_minutes"] = _coerce_int(global_in.get("auto_antics_min_minutes"), global_out["auto_antics_min_minutes"], 1, 60)
     global_out["auto_antics_max_minutes"] = _coerce_int(global_in.get("auto_antics_max_minutes"), global_out["auto_antics_max_minutes"], 1, 60)
     global_out["auto_antics_dance_chance"] = _coerce_int(global_in.get("auto_antics_dance_chance"), global_out["auto_antics_dance_chance"], 0, 100)
+    global_out["rare_events_enabled"] = _coerce_bool(global_in.get("rare_events_enabled"), global_out["rare_events_enabled"])
+    global_out["chaos_mode"] = _coerce_bool(global_in.get("chaos_mode"), global_out["chaos_mode"])
 
     reactions_in = global_in.get("reactions", {})
     if not isinstance(reactions_in, dict):
@@ -114,6 +122,19 @@ def sanitize_settings_payload(payload):
         reactions_in = {}
     for key, default_value in default_settings()["global"]["reactions"].items():
         global_out["reactions"][key] = _coerce_bool(reactions_in.get(key), default_value)
+
+    quote_pack_states = {}
+    quote_pack_states_in = _coerce_dict(global_in.get("quote_pack_states", {}))
+    for key, value in quote_pack_states_in.items():
+        pack_key = _coerce_str(key).strip()
+        if not pack_key:
+            continue
+        quote_pack_states[pack_key] = _coerce_bool(value, True)
+    for entry in global_in.get("disabled_quote_packs", []):
+        pack_key = _coerce_str(entry).strip()
+        if pack_key and pack_key not in quote_pack_states:
+            quote_pack_states[pack_key] = False
+    global_out["quote_pack_states"] = quote_pack_states
 
     favorites = []
     for entry in global_in.get("favorite_sayings", []):

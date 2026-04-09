@@ -41,7 +41,10 @@ class SettingsServiceTests(unittest.TestCase):
             auto_antics_min_minutes=5,
             auto_antics_max_minutes=8,
             auto_antics_dance_chance=35,
+            rare_events_enabled=False,
+            chaos_mode=True,
             reaction_toggles={"usb": False, "updates": False},
+            quote_pack_states={"jason-quotes": False},
             favorite_templates=["One", "Two"],
             recent_sayings=[{"template": "One", "text": "Rendered one", "source": "test", "timestamp": 1.0}],
         )
@@ -54,6 +57,9 @@ class SettingsServiceTests(unittest.TestCase):
         self.assertEqual(12, loaded.global_settings.sound_volume)
         self.assertFalse(loaded.global_settings.auto_update_enabled)
         self.assertFalse(loaded.global_settings.reaction_toggles["usb"])
+        self.assertFalse(loaded.global_settings.rare_events_enabled)
+        self.assertTrue(loaded.global_settings.chaos_mode)
+        self.assertEqual({"jason-quotes": False}, loaded.global_settings.quote_pack_states)
         self.assertEqual("wizard", loaded.instance_settings.skin)
         self.assertEqual("Desk Jason", loaded.instance_settings.name)
 
@@ -86,7 +92,7 @@ class SettingsServiceTests(unittest.TestCase):
         self.service.export_to_file(export_path)
         exported = json.loads(export_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(2, exported["schema_version"])
+        self.assertEqual(4, exported["schema_version"])
         self.assertEqual(70, exported["global"]["sound_volume"])
         self.assertEqual({}, exported["instances"])
 

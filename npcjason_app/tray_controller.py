@@ -37,13 +37,33 @@ class TrayPetOption:
 
 
 @dataclass
+class TrayToyOption:
+    key: str
+    label: str
+    cooldown_ms: int = 0
+    active: bool = False
+
+
+@dataclass
+class TrayQuotePackOption:
+    key: str
+    label: str
+    enabled: bool = True
+
+
+@dataclass
 class TrayState:
     pet_name: str
     mood_label: str
     skin_key: str
     sound_enabled: bool
     auto_start_enabled: bool
+    rare_events_enabled: bool = True
+    chaos_mode: bool = False
+    active_toy_label: str = ""
     skin_options: List[TraySkinOption] = field(default_factory=list)
+    toy_options: List[TrayToyOption] = field(default_factory=list)
+    quote_packs: List[TrayQuotePackOption] = field(default_factory=list)
     pets: List[TrayPetOption] = field(default_factory=list)
     tray_colors: dict = field(default_factory=dict)
 
@@ -62,6 +82,11 @@ class TrayActions:
     open_settings: Callable
     toggle_auto_start: Callable
     toggle_sound: Callable
+    toggle_rare_events: Callable
+    toggle_chaos_mode: Callable
+    trigger_toy: Callable
+    trigger_quote: Callable
+    toggle_quote_pack: Callable
     bring_back: Callable
     check_updates: Callable
     open_releases: Callable
@@ -71,12 +96,19 @@ class TrayActions:
 
 
 def build_tray_snapshot(state):
+    title = f"{state.pet_name} | {state.mood_label}"
+    if state.active_toy_label:
+        title += f" | {state.active_toy_label}"
     return {
-        "title": f"{state.pet_name} | {state.mood_label}",
+        "title": title,
         "skin_labels": [skin.label for skin in state.skin_options],
         "selected_skin": state.skin_key,
         "sound_enabled": bool(state.sound_enabled),
         "auto_start_enabled": bool(state.auto_start_enabled),
+        "rare_events_enabled": bool(state.rare_events_enabled),
+        "chaos_mode": bool(state.chaos_mode),
+        "toy_labels": [toy.label for toy in state.toy_options],
+        "quote_packs": [pack.label for pack in state.quote_packs],
         "pets": [pet.label for pet in state.pets],
     }
 
@@ -176,12 +208,36 @@ class TrayController:
             if state.pets
             else pystray.Menu(item("No other pets", lambda icon, menu_item: None, enabled=False))
         )
+        toy_items = [
+            item(
+                toy.label if toy.cooldown_ms <= 0 else f"{toy.label} ({max(1, toy.cooldown_ms // 1000)}s)",
+                self._dispatch(self.actions.trigger_toy, toy.key),
+                enabled=lambda menu_item, chosen=toy.key: any(
+                    option.key == chosen and option.cooldown_ms <= 0 and not option.active
+                    for option in self.state_provider().toy_options
+                ),
+            )
+            for toy in state.toy_options
+        ]
+        quote_pack_items = [
+            item(
+                pack.label,
+                self._dispatch(self.actions.toggle_quote_pack, pack.key),
+                checked=lambda menu_item, chosen=pack.key: any(
+                    option.key == chosen and option.enabled
+                    for option in self.state_provider().quote_packs
+                ),
+            )
+            for pack in state.quote_packs
+        ]
         return pystray.Menu(
             item("Show/Hide", self._dispatch(self.actions.toggle_visibility), default=True),
             item(lambda menu_item: snapshot["title"], lambda icon, menu_item: None, enabled=False),
             item("Choose Skin", pystray.Menu(*skin_items)),
+            item("Toys", pystray.Menu(*toy_items) if toy_items else pystray.Menu(item("No toys", lambda icon, menu_item: None, enabled=False))),
             item("Dance!", self._dispatch(self.actions.dance)),
-            item("Say Something", self._dispatch(self.actions.say)),
+            item("Trigger Quote", self._dispatch(self.actions.trigger_quote)),
+            item("Quote Packs", pystray.Menu(*quote_pack_items) if quote_pack_items else pystray.Menu(item("No packs", lambda icon, menu_item: None, enabled=False))),
             item("Repeat Last Saying", self._dispatch(self.actions.repeat_last)),
             item("Favorite Last Saying", self._dispatch(self.actions.favorite_last)),
             item("Random Favorite", self._dispatch(self.actions.random_favorite)),
@@ -190,6 +246,8 @@ class TrayController:
             item("Settings", self._dispatch(self.actions.open_settings)),
             item("Start With Windows", self._dispatch(self.actions.toggle_auto_start), checked=lambda menu_item: self.state_provider().auto_start_enabled),
             item("Sound Effects", self._dispatch(self.actions.toggle_sound), checked=lambda menu_item: self.state_provider().sound_enabled),
+            item("Rare Events", self._dispatch(self.actions.toggle_rare_events), checked=lambda menu_item: self.state_provider().rare_events_enabled),
+            item("Chaos Mode", self._dispatch(self.actions.toggle_chaos_mode), checked=lambda menu_item: self.state_provider().chaos_mode),
             item("Bring Back On Screen", self._dispatch(self.actions.bring_back)),
             item("Check for Updates", self._dispatch(self.actions.check_updates)),
             item("Open Releases Page", self._dispatch(self.actions.open_releases)),

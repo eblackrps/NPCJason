@@ -19,6 +19,7 @@ from .diagnostics import DiagnosticsLogger
 from .dialogue import DialogueLibrary, PET_CONVERSATIONS, render_template
 from .paths import RESOURCE_DIR, SETTINGS_PATH, SHARED_STATE_PATH
 from .pet_window import PetWindow
+from .rare_events import RareEventManager
 from .runtime_state import RuntimeStateController, is_screenshot_window_title, quiet_hours_active
 from .scheduler import ManagedTkScheduler
 from .settings_service import GlobalSettings, InstanceSettings, SettingsService
@@ -32,7 +33,16 @@ from .sound import SoundManager
 from .speech_history import SpeechHistory
 from .startup import StartupManager
 from .store import JsonStore, clamp
-from .tray_controller import TrayActions, TrayController, TrayPetOption, TraySkinOption, TrayState
+from .toys import ToyManager
+from .tray_controller import (
+    TrayActions,
+    TrayController,
+    TrayPetOption,
+    TrayQuotePackOption,
+    TraySkinOption,
+    TrayState,
+    TrayToyOption,
+)
 from .updates import UpdateChecker, UpdateCoordinator
 from .version import APP_NAME, APP_VERSION
 from .windows_events import (
@@ -54,6 +64,7 @@ HOT_RELOAD_MS = 3000
 UPDATE_CHECK_DELAY_MS = 10000
 EDGE_SNAP_MARGIN = 28
 SUPPRESSION_POLL_MS = 1200
+RARE_EVENT_RANGE_MS = (9 * 60 * 1000, 16 * 60 * 1000)
 
 
 class NPCJasonApp:
@@ -70,6 +81,8 @@ class NPCJasonApp:
         self.scheduler = ManagedTkScheduler(self.root, logger=self.logger)
         self.runtime_state = RuntimeStateController(logger=self.logger)
         self.animation = AnimationController()
+        self.toy_manager = ToyManager(self.root, logger=self.logger)
+        self.rare_event_manager = RareEventManager(logger=self.logger)
 
         self.settings_store = JsonStore(SETTINGS_PATH, default_settings, logger=self.logger, store_name="settings")
         self.shared_state_store = JsonStore(
@@ -108,6 +121,15 @@ class NPCJasonApp:
         self.last_conversation_started_at = 0.0
         self.seen_conversation_ids = []
         self.tray_controller = None
+        self.skin_tags = []
+        self.skin_sound_set = None
+        self.skin_quote_affinity = {}
+        self.skin_accessory_offsets = {}
+        self.skin_capabilities = {}
+        self.quote_pack_states = {}
+        self.rare_events_enabled = True
+        self.chaos_mode = False
+        self._ride_origin_position = None
 
         self.canvas = self.window.canvas
         self._load_settings()
@@ -153,12 +175,16 @@ class NPCJasonApp:
         self.auto_antics_min_minutes = int(global_settings.auto_antics_min_minutes)
         self.auto_antics_max_minutes = int(global_settings.auto_antics_max_minutes)
         self.auto_antics_dance_chance = int(global_settings.auto_antics_dance_chance)
+        self.rare_events_enabled = bool(global_settings.rare_events_enabled)
+        self.chaos_mode = bool(global_settings.chaos_mode)
         self.reaction_toggles = dict(global_settings.reaction_toggles)
+        self.quote_pack_states = dict(global_settings.quote_pack_states)
         self.speech_history.load(
             recent=global_settings.recent_sayings,
             favorites=global_settings.favorite_templates,
         )
         self.pet_name = str(instance_settings.name)
+        self.dialogue.set_pack_states(self.quote_pack_states)
 
         self.sound_manager.set_enabled(self.sound_enabled)
         self.sound_manager.set_volume(self.sound_volume)
@@ -186,6 +212,15 @@ class NPCJasonApp:
         self.active_palette = dict(BASE_PALETTE)
         self.active_palette.update(assets["palette"])
         self.tray_colors = assets["tray"]
+        self.skin_tags = list(assets.get("tags", []))
+        self.skin_sound_set = assets.get("sound_set")
+        self.skin_quote_affinity = dict(assets.get("quote_affinity", {}))
+        self.skin_accessory_offsets = dict(assets.get("accessory_offsets", {}))
+        self.skin_capabilities = dict(assets.get("capabilities", {}))
+        self.animation.set_sequences(
+            assets.get("idle_sequence"),
+            assets.get("interaction_sequence"),
+        )
 
     def _apply_initial_position(self):
         default_x, default_y = self._default_window_position()
@@ -242,6 +277,13 @@ class NPCJasonApp:
             owner="assets",
         )
         self.scheduler.schedule_loop(
+            "toy_tick",
+            self._toy_tick,
+            initial_delay_ms=0,
+            default_delay_ms=150,
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
             "random_saying",
             self._random_saying_tick,
             initial_delay_ms=self._random_delay(RANDOM_SAYING_RANGE_MS),
@@ -263,6 +305,7 @@ class NPCJasonApp:
             owner="coordination",
         )
         self._schedule_auto_antics()
+        self._schedule_rare_events()
         if self.auto_update_enabled:
             self.scheduler.schedule(
                 "auto_update_check",
@@ -307,6 +350,11 @@ class NPCJasonApp:
                 open_settings=self._open_settings_window,
                 toggle_auto_start=self._toggle_auto_start,
                 toggle_sound=self._toggle_sound_enabled,
+                toggle_rare_events=self._toggle_rare_events_enabled,
+                toggle_chaos_mode=self._toggle_chaos_mode,
+                trigger_toy=self._trigger_toy_from_menu,
+                trigger_quote=lambda: self._show_saying(True),
+                toggle_quote_pack=self._toggle_quote_pack,
                 bring_back=self.bring_back_on_screen,
                 check_updates=self.check_for_updates_manual,
                 open_releases=self._open_releases_page,
@@ -339,6 +387,27 @@ class NPCJasonApp:
         key = skin_key or self.skin_key
         return dict(self.skins.get(key, {}))
 
+    @staticmethod
+    def _dedupe(values):
+        ordered = []
+        seen = set()
+        for value in list(values or []):
+            text = str(value).strip()
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            ordered.append(text)
+        return ordered
+
+    def _active_toy_label(self, toy_key=None):
+        active_key = toy_key or self.toy_manager.active_toy_key()
+        if not active_key:
+            return ""
+        for item in self.toy_manager.available_toys():
+            if item["key"] == active_key:
+                return item["label"]
+        return active_key
+
     def _sayings_context(self, overrides=None):
         now = datetime.now()
         battery = self.last_battery_snapshot or get_battery_snapshot() or {}
@@ -351,10 +420,54 @@ class NPCJasonApp:
             "active_window": self.last_active_window_title or "desktop",
             "battery_percent": battery.get("percent", "?"),
             "skin": self.skin_metadata().get("label", self.skin_key),
+            "skin_key": self.skin_key,
+            "toy": self._active_toy_label(),
         }
         if overrides:
             context.update(overrides)
         return context
+
+    def _quote_selection_context(self, extra_contexts=None, extra_categories=None, extra_packs=None, toy_key=None):
+        contexts = self._dedupe(self.skin_quote_affinity.get("contexts", []))
+        contexts.extend(context for context in self._dedupe(extra_contexts) if context not in contexts)
+        contexts.extend(context for context in self.toy_manager.active_contexts() if context not in contexts)
+
+        preferred_categories = self._dedupe(self.skin_quote_affinity.get("categories", []))
+        preferred_categories.extend(
+            category for category in self._dedupe(extra_categories) if category not in preferred_categories
+        )
+        preferred_categories.extend(
+            tag for tag in self.toy_manager.active_tags() if tag not in preferred_categories
+        )
+
+        preferred_packs = self._dedupe(self.skin_quote_affinity.get("packs", []))
+        preferred_packs.extend(pack for pack in self._dedupe(extra_packs) if pack not in preferred_packs)
+
+        return {
+            "skin_key": self.skin_key,
+            "skin_tags": list(self.skin_tags),
+            "mood_key": self.mood,
+            "contexts": contexts,
+            "preferred_categories": preferred_categories,
+            "preferred_packs": preferred_packs,
+            "toy": toy_key or self.toy_manager.active_toy_key() or "",
+        }
+
+    def _recent_templates(self):
+        return [entry.get("template", entry.get("text", "")) for entry in self.speech_history.recent()]
+
+    def _play_effect(self, effect_name):
+        if not effect_name:
+            return
+        self.sound_manager.play(effect_name)
+
+    def _play_interaction_sound(self):
+        custom_effect = None
+        if self.skin_sound_set:
+            candidate = str(self.skin_sound_set).replace("-", "_") + "_interaction"
+            if self.sound_manager.has_effect(candidate):
+                custom_effect = candidate
+        self._play_effect(custom_effect or "dance")
 
     def _is_quiet_hours_active(self):
         return quiet_hours_active(
@@ -474,7 +587,12 @@ class NPCJasonApp:
                 return False
 
         try:
-            self.window.show_bubble(text)
+            bubble_offset = self.skin_accessory_offsets.get("bubble", {})
+            self.window.show_bubble(
+                text,
+                offset_x=bubble_offset.get("x", 0),
+                offset_y=bubble_offset.get("y", 0),
+            )
         except tk.TclError:
             self.logger.exception("Failed to create speech bubble")
             return False
@@ -484,10 +602,35 @@ class NPCJasonApp:
         self._record_saying(template_text or text, text, source)
         return True
 
-    def _show_saying(self, reveal_if_hidden=False):
-        template = random.choice(self.dialogue.ambient_pool(self.mood))
-        rendered = render_template(template, self._sayings_context())
-        return self._show_text(rendered, reveal_if_hidden, source="ambient", template_text=template)
+    def _show_saying(
+        self,
+        reveal_if_hidden=False,
+        source="ambient",
+        extra_contexts=None,
+        extra_categories=None,
+        extra_packs=None,
+        toy_key=None,
+    ):
+        choice = self.dialogue.pick_ambient(
+            self.mood,
+            context=self._quote_selection_context(
+                extra_contexts=extra_contexts,
+                extra_categories=extra_categories,
+                extra_packs=extra_packs,
+                toy_key=toy_key,
+            ),
+            recent_templates=self._recent_templates(),
+        )
+        rendered = render_template(
+            choice.template,
+            self._sayings_context({"toy": self._active_toy_label(toy_key)}),
+        )
+        return self._show_text(
+            rendered,
+            reveal_if_hidden,
+            source=f"{source}:{choice.pack_key}",
+            template_text=choice.template,
+        )
 
     def _random_saying_tick(self):
         if (
@@ -513,6 +656,15 @@ class NPCJasonApp:
     def available_skin_labels(self):
         return {key: self.skins[key].get("label", key) for key in self.available_skin_keys()}
 
+    def available_quote_packs(self):
+        return self.dialogue.available_packs()
+
+    def available_toys(self):
+        return self.toy_manager.available_toys()
+
+    def quote_pack_enabled(self, pack_key):
+        return self.dialogue.pack_enabled(pack_key)
+
     def _set_skin(self, skin_key):
         if skin_key not in self.skins or skin_key == self.skin_key:
             return
@@ -531,6 +683,36 @@ class NPCJasonApp:
         self._schedule_settings_save()
         self._refresh_tray()
 
+    def _toggle_rare_events_enabled(self):
+        self.rare_events_enabled = not self.rare_events_enabled
+        self._schedule_rare_events()
+        self._schedule_settings_save()
+        self._refresh_tray()
+
+    def _toggle_chaos_mode(self):
+        self.chaos_mode = not self.chaos_mode
+        self._schedule_rare_events()
+        self._schedule_settings_save()
+        self._refresh_tray()
+
+    def _toggle_quote_pack(self, pack_key):
+        if not pack_key:
+            return
+        self.set_quote_pack_enabled(pack_key, not self.dialogue.pack_enabled(pack_key))
+
+    def set_quote_pack_enabled(self, pack_key, enabled):
+        if not pack_key:
+            return False
+        if not self.dialogue.set_pack_enabled(pack_key, enabled):
+            return False
+        self.quote_pack_states = self.dialogue.pack_state_overrides()
+        self._schedule_settings_save()
+        self._refresh_tray()
+        return True
+
+    def _trigger_toy_from_menu(self, toy_key):
+        self._trigger_toy(toy_key, reveal_if_hidden=True, show_saying=True, source="toy-manual")
+
     def apply_settings(
         self,
         skin_key,
@@ -547,6 +729,8 @@ class NPCJasonApp:
         auto_antics_min_minutes,
         auto_antics_max_minutes,
         auto_antics_dance_chance,
+        rare_events_enabled,
+        chaos_mode,
         pet_name,
         reaction_toggles,
     ):
@@ -562,6 +746,8 @@ class NPCJasonApp:
         self.auto_antics_min_minutes = max(1, int(auto_antics_min_minutes))
         self.auto_antics_max_minutes = max(1, int(auto_antics_max_minutes))
         self.auto_antics_dance_chance = clamp(int(auto_antics_dance_chance), 0, 100)
+        self.rare_events_enabled = bool(rare_events_enabled)
+        self.chaos_mode = bool(chaos_mode)
         self.pet_name = str(pet_name or self.pet_name)
         self.reaction_toggles = dict(default_settings()["global"]["reactions"])
         self.reaction_toggles.update(reaction_toggles)
@@ -574,6 +760,7 @@ class NPCJasonApp:
             self._show_text("Startup setting failed.\nSee log for details.")
         self._set_skin(skin_key)
         self._schedule_auto_antics()
+        self._schedule_rare_events()
         self._refresh_suppression_state()
         if self.auto_update_enabled:
             self.scheduler.schedule(
@@ -597,6 +784,10 @@ class NPCJasonApp:
         maximum = max(minimum, max(self.auto_antics_min_minutes, self.auto_antics_max_minutes))
         return random.randint(minimum * 60 * 1000, maximum * 60 * 1000)
 
+    def _random_rare_event_delay(self):
+        delay_range = (5 * 60 * 1000, 11 * 60 * 1000) if self.chaos_mode else RARE_EVENT_RANGE_MS
+        return self._random_delay(delay_range)
+
     def _schedule_auto_antics(self):
         self.scheduler.cancel("auto_antics")
         if not self.auto_antics_enabled or self.is_quitting:
@@ -609,17 +800,150 @@ class NPCJasonApp:
             owner="behavior",
         )
 
+    def _schedule_rare_events(self):
+        self.scheduler.cancel("rare_event")
+        if not self.rare_events_enabled or self.is_quitting:
+            return
+        self.scheduler.schedule_loop(
+            "rare_event",
+            self._rare_event_tick,
+            initial_delay_ms=self._random_rare_event_delay(),
+            default_delay_ms=self._random_rare_event_delay(),
+            owner="behavior",
+        )
+
     def _auto_antics_tick(self):
         if self.is_quitting:
             return None
         if self.auto_antics_enabled and self._automatic_actions_allowed() and self._can_speak(14):
-            if random.randint(1, 100) <= self.auto_antics_dance_chance:
+            if self.chaos_mode and random.randint(1, 100) <= 22:
+                if not self._trigger_random_toy(source="auto-antics"):
+                    self._show_saying(source="auto-antics")
+            elif random.randint(1, 100) <= self.auto_antics_dance_chance:
                 self._trigger_dance(show_saying=False)
             else:
-                self._show_saying()
+                self._show_saying(source="auto-antics")
         return self._random_auto_antics_delay()
 
+    def _rare_event_tick(self):
+        if self.is_quitting:
+            return None
+        if (
+            not self.rare_events_enabled
+            or not self._automatic_actions_allowed()
+            or not self._can_speak(18)
+        ):
+            return self._random_rare_event_delay()
+        event = self.rare_event_manager.pick_event(
+            {
+                "skin_tags": self.skin_tags,
+                "preferred_categories": self.skin_quote_affinity.get("categories", []),
+                "chaos_mode": self.chaos_mode,
+            }
+        )
+        if event and self._trigger_toy(
+            event.toy_key,
+            reveal_if_hidden=False,
+            show_saying=True,
+            source=f"rare:{event.key}",
+            extra_contexts=list(event.contexts),
+            extra_categories=list(event.preferred_categories),
+        ):
+            self.rare_event_manager.mark_triggered(event.key)
+        return self._random_rare_event_delay()
+
+    def _preferred_toy_key(self):
+        weighted = []
+        preferred_categories = set(self.skin_quote_affinity.get("categories", []))
+        skin_tags = set(self.skin_tags)
+        for toy in self.available_toys():
+            if toy["cooldown_ms"] > 0 or toy["active"]:
+                continue
+            weight = 1
+            if skin_tags & set(toy["tags"]):
+                weight += 3
+            if preferred_categories & set(toy["tags"]):
+                weight += 2
+            weighted.append((toy["key"], weight))
+        if not weighted:
+            return None
+        total = sum(weight for _key, weight in weighted)
+        pick = random.uniform(0, total)
+        current = 0.0
+        for toy_key, weight in weighted:
+            current += weight
+            if pick <= current:
+                return toy_key
+        return weighted[-1][0]
+
+    def _trigger_random_toy(self, source="toy-auto", reveal_if_hidden=False):
+        toy_key = self._preferred_toy_key()
+        if not toy_key:
+            return False
+        return self._trigger_toy(toy_key, reveal_if_hidden=reveal_if_hidden, show_saying=True, source=source)
+
+    def _trigger_toy(
+        self,
+        toy_key,
+        reveal_if_hidden=False,
+        show_saying=False,
+        source="toy",
+        extra_contexts=None,
+        extra_categories=None,
+    ):
+        if self.is_quitting or not toy_key:
+            return False
+        if self._root_is_hidden():
+            if reveal_if_hidden:
+                self.window.show()
+                self.runtime_state.set_visibility(False)
+            else:
+                return False
+        result = self.toy_manager.trigger(
+            toy_key,
+            self.window_x,
+            self.window_y,
+            self.window.work_area(),
+            skin_offsets=self.skin_accessory_offsets,
+        )
+        if not result.started:
+            if reveal_if_hidden and result.reason == "cooldown":
+                seconds = max(1, int(result.remaining_cooldown_ms / 1000))
+                self._show_text(f"{self._active_toy_label(toy_key)} is cooling down.\nTry again in {seconds}s.")
+            elif reveal_if_hidden and result.reason == "busy":
+                self._show_text("Jason is already busy with a toy.\nGive him a second.")
+            return False
+        if toy_key == "tricycle":
+            self._ride_origin_position = (self.window_x, self.window_y)
+        self._play_effect(result.sound_effect)
+        self._refresh_tray()
+        if show_saying and self._can_speak(2):
+            self._show_saying(
+                reveal_if_hidden=reveal_if_hidden,
+                source=source,
+                extra_contexts=list(extra_contexts or []) + list(result.contexts),
+                extra_categories=list(extra_categories or []) + list(result.tags),
+                toy_key=result.toy_key,
+            )
+        return True
+
+    def _toy_tick(self):
+        if self.is_quitting:
+            return None
+        result = self.toy_manager.tick(hidden=self._root_is_hidden())
+        if result.pet_position and not self.dragging:
+            self.window_x, self.window_y = self._clamp_window_position(*result.pet_position)
+            self._apply_window_position(0)
+        if result.finished_toy == "tricycle" and self._ride_origin_position:
+            self.window_x, self.window_y = self._ride_origin_position
+            self._apply_window_position(0)
+            self._ride_origin_position = None
+        if result.finished_toy:
+            self._refresh_tray()
+        return result.next_delay_ms
+
     def reload_dialogue(self):
+        self.dialogue.set_pack_states(self.quote_pack_states)
         self.dialogue.reload_if_needed(force=True)
         self._log_asset_warnings_if_changed()
         self.logger.info("Reloaded dialogue packs")
@@ -639,6 +963,7 @@ class NPCJasonApp:
         )
         self._bring_back_on_screen()
         self._schedule_auto_antics()
+        self._schedule_rare_events()
         if not self.animation.is_dancing:
             self._render_pose("idle_open", 0)
         self._refresh_tray()
@@ -652,6 +977,7 @@ class NPCJasonApp:
         self.window_x, self.window_y = self._clamp_window_position(default_x, default_y)
         self._bring_back_on_screen()
         self._schedule_auto_antics()
+        self._schedule_rare_events()
         if not self.animation.is_dancing:
             self._render_pose("idle_open", 0)
         self._refresh_tray()
@@ -676,6 +1002,7 @@ class NPCJasonApp:
             return None
 
         self.dialogue.reload_if_needed()
+        self.dialogue.set_pack_states(self.quote_pack_states)
         skin_bundle = load_skin_bundle()
         reloaded_skins = skin_bundle["definitions"]
         reloaded_errors = skin_bundle["errors"]
@@ -736,10 +1063,13 @@ class NPCJasonApp:
         self._trigger_dance(show_saying=True)
 
     def _trigger_dance(self, show_saying=False):
-        self.animation.start_dance()
-        self.sound_manager.play("dance")
+        started = self.animation.start_dance()
+        if not started:
+            return False
+        self._play_interaction_sound()
         if show_saying:
-            self._show_saying()
+            self._show_saying(source="interaction")
+        return True
 
     def _active_other_instances(self):
         return self.coordinator.active_other_instances()
@@ -1018,9 +1348,9 @@ class NPCJasonApp:
     def _open_releases_page(self):
         webbrowser.open(self.update_checker.latest_release_url())
 
-    def _on_right_click(self, event):
-        menu = tk.Menu(
-            self.root,
+    def _new_context_menu(self, parent):
+        return tk.Menu(
+            parent,
             tearoff=0,
             bg="#1a1a2e",
             fg="#fef9e7",
@@ -1028,33 +1358,87 @@ class NPCJasonApp:
             activeforeground="#ffffff",
             font=("Consolas", 10),
         )
+
+    def _build_skin_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        selected_skin = tk.StringVar(value=self.skin_key)
+        for skin_key, skin_data in sorted(self.skins.items()):
+            menu.add_radiobutton(
+                label=skin_data.get("label", skin_key),
+                value=skin_key,
+                variable=selected_skin,
+                command=lambda chosen=skin_key: self._set_skin(chosen),
+            )
+        return menu
+
+    def _build_toy_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        toys = self.available_toys()
+        if not toys:
+            menu.add_command(label="No toys loaded", state="disabled")
+            return menu
+        for toy in toys:
+            label = toy["label"] if toy["cooldown_ms"] <= 0 else f"{toy['label']} ({max(1, toy['cooldown_ms'] // 1000)}s)"
+            menu.add_command(
+                label=label,
+                command=lambda chosen=toy["key"]: self._trigger_toy_from_menu(chosen),
+                state="normal" if toy["cooldown_ms"] <= 0 and not toy["active"] else "disabled",
+            )
+        return menu
+
+    def _build_quote_pack_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        packs = self.available_quote_packs()
+        if not packs:
+            menu.add_command(label="No quote packs loaded", state="disabled")
+            return menu
+        for pack in packs:
+            menu.add_checkbutton(
+                label=pack["label"],
+                onvalue=True,
+                offvalue=False,
+                variable=tk.BooleanVar(value=pack["enabled"]),
+                command=lambda chosen=pack["key"]: self._toggle_quote_pack(chosen),
+            )
+        return menu
+
+    def _on_right_click(self, event):
+        menu = self._new_context_menu(self.root)
         menu.add_command(label=f"Mood: {MOODS[self.mood]['label']}", state="disabled")
         menu.add_command(label=f"Name: {self.pet_name}", state="disabled")
+        if self._active_toy_label():
+            menu.add_command(label=f"Toy: {self._active_toy_label()}", state="disabled")
+        menu.add_command(label="Trigger Quote", command=lambda: self._show_saying(True))
         menu.add_command(label="Dance!", command=lambda: self._trigger_dance(True))
-        menu.add_command(label="Say Something", command=self._show_saying)
         menu.add_command(label="Repeat Last Saying", command=self.repeat_last_saying)
         menu.add_command(label="Favorite Last Saying", command=self.favorite_last_saying)
         menu.add_command(label="Random Favorite", command=self.say_random_favorite)
         menu.add_command(label="Summon a Friend", command=self._summon_friend)
         menu.add_command(label="Bring Back On Screen", command=self.bring_back_on_screen)
         menu.add_command(label="Settings", command=self._open_settings_window)
-
-        skins_menu = tk.Menu(menu, tearoff=0, bg="#1a1a2e", fg="#fef9e7")
-        selected_skin = tk.StringVar(value=self.skin_key)
-        for skin_key, skin_data in sorted(self.skins.items()):
-            skins_menu.add_radiobutton(
-                label=skin_data.get("label", skin_key),
-                value=skin_key,
-                variable=selected_skin,
-                command=lambda chosen=skin_key: self._set_skin(chosen),
-            )
-        menu.add_cascade(label="Choose Skin", menu=skins_menu)
+        menu.add_cascade(label="Choose Skin", menu=self._build_skin_menu(menu))
+        menu.add_cascade(label="Toys", menu=self._build_toy_menu(menu))
+        menu.add_cascade(label="Quote Packs", menu=self._build_quote_pack_menu(menu))
         menu.add_checkbutton(
             label="Sound Effects",
             onvalue=True,
             offvalue=False,
             variable=tk.BooleanVar(value=self.sound_enabled),
             command=self._toggle_sound_enabled,
+        )
+        menu.add_checkbutton(
+            label="Rare Events",
+            onvalue=True,
+            offvalue=False,
+            variable=tk.BooleanVar(value=self.rare_events_enabled),
+            command=self._toggle_rare_events_enabled,
+        )
+        menu.add_checkbutton(
+            label="Chaos Mode",
+            onvalue=True,
+            offvalue=False,
+            variable=tk.BooleanVar(value=self.chaos_mode),
+            command=self._toggle_chaos_mode,
         )
         menu.add_command(label="Dismiss All Friends", command=self.dismiss_all_friends)
         menu.add_command(label="Check for Updates", command=self.check_for_updates_manual)
@@ -1074,9 +1458,29 @@ class NPCJasonApp:
             skin_key=self.skin_key,
             sound_enabled=self.sound_enabled,
             auto_start_enabled=self.startup_manager.is_enabled(),
+            rare_events_enabled=self.rare_events_enabled,
+            chaos_mode=self.chaos_mode,
+            active_toy_label=self._active_toy_label(),
             skin_options=[
                 TraySkinOption(key=skin_key, label=skin_data.get("label", skin_key))
                 for skin_key, skin_data in sorted(self.skins.items())
+            ],
+            toy_options=[
+                TrayToyOption(
+                    key=toy["key"],
+                    label=toy["label"],
+                    cooldown_ms=toy["cooldown_ms"],
+                    active=toy["active"],
+                )
+                for toy in self.available_toys()
+            ],
+            quote_packs=[
+                TrayQuotePackOption(
+                    key=pack["key"],
+                    label=pack["label"],
+                    enabled=pack["enabled"],
+                )
+                for pack in self.available_quote_packs()
             ],
             pets=[
                 TrayPetOption(pet_id=pet_id, label=description)
@@ -1129,7 +1533,10 @@ class NPCJasonApp:
             auto_antics_min_minutes=self.auto_antics_min_minutes,
             auto_antics_max_minutes=self.auto_antics_max_minutes,
             auto_antics_dance_chance=self.auto_antics_dance_chance,
+            rare_events_enabled=self.rare_events_enabled,
+            chaos_mode=self.chaos_mode,
             reaction_toggles=dict(self.reaction_toggles),
+            quote_pack_states=dict(self.quote_pack_states),
             favorite_templates=list(self.speech_history.favorites()),
             recent_sayings=list(self.speech_history.recent()),
         )
@@ -1180,6 +1587,7 @@ class NPCJasonApp:
 
         if self.tray_controller:
             self.tray_controller.stop()
+        self.toy_manager.shutdown()
         self.sound_manager.shutdown()
 
         self.logger.info(f"Stopping {APP_NAME} pet_id={self.pet_id}")

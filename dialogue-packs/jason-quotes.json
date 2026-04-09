@@ -1,0 +1,117 @@
+{
+  "key": "jason-quotes",
+  "label": "Jason Quote Pack",
+  "description": "Structured quotes with office, homelab, network, and responsible-context affinities.",
+  "weight": 2,
+  "enabled": true,
+  "quotes": [
+    {
+      "text": "guys I barely graduated high school...",
+      "categories": ["office"]
+    },
+    {
+      "text": "It's the mouse retaliation",
+      "categories": ["office"]
+    },
+    {
+      "text": "BS = Bulk Storage of course...",
+      "categories": ["homelab", "office"]
+    },
+    {
+      "text": "(Sean Bean dies)",
+      "categories": ["office"]
+    },
+    {
+      "text": "Step 1: Make a coffee python joke. Step 378: this is Jody's fav chat group",
+      "categories": ["office"]
+    },
+    {
+      "text": "doing the ISE training, he is using IE and he says 'first step is.. we use IE to install firefox'",
+      "categories": ["office", "network"]
+    },
+    {
+      "text": "My Gmail has started summarizing emails for me. It's both cool and also like 'so you're def reading my emails'",
+      "categories": ["office", "responsible"]
+    },
+    {
+      "text": "not today little phish",
+      "categories": ["office", "responsible"]
+    },
+    {
+      "text": "at my last job they got a large % of the company with a dog photo comp...",
+      "categories": ["office", "responsible"]
+    },
+    {
+      "text": "I like that that movie thought Crocs were a joke and no one would ever wear them",
+      "categories": ["office"]
+    },
+    {
+      "text": "sadly I'm being responsible:",
+      "categories": ["responsible"]
+    },
+    {
+      "text": "When everyone is on PTO...",
+      "categories": ["office", "responsible"]
+    },
+    {
+      "text": "Homelabs are less about need",
+      "categories": ["homelab"]
+    },
+    {
+      "text": "I feel like I'm banned from r/homelab at this point… I use more cloud than self hosting",
+      "categories": ["homelab"]
+    },
+    {
+      "text": "we can't have an auth method that just craps itself and stops working randomly...",
+      "categories": ["network", "responsible"]
+    },
+    {
+      "text": "yeah everytime I have to reauth to Jumpcloud to get to my homelab apps I want to toss it into the trash",
+      "categories": ["homelab", "network"]
+    },
+    {
+      "text": "but New Deployment > fixing old deployment...",
+      "categories": ["responsible", "office"]
+    },
+    {
+      "text": "too easy...",
+      "categories": ["office"]
+    },
+    {
+      "text": "When you go hunting in the office...",
+      "categories": ["office"]
+    },
+    {
+      "text": "not exactly the icons I would have chosen... What dis?",
+      "categories": ["office", "network"]
+    },
+    {
+      "text": "OSPF is so nice.. and now the RPS world knows about 10.103.0.0/16...",
+      "categories": ["network"]
+    },
+    {
+      "text": "okay L3 is done, oh OSPF",
+      "categories": ["network"]
+    },
+    {
+      "text": "once I get port auto provision working.. its one less thing I have to do.",
+      "categories": ["network", "responsible"]
+    },
+    {
+      "text": "we should have a homelab rack",
+      "categories": ["homelab"]
+    },
+    {
+      "text": "i'll let you guess which one is public and which one is homelab",
+      "categories": ["homelab", "network"]
+    },
+    {
+      "text": "Was looking into Lidarr this morning and PlexAmp... would be nice to ditch Spotify",
+      "categories": ["homelab"]
+    },
+    {
+      "text": "I wonder if I could pull it into uptimekuma",
+      "categories": ["homelab", "responsible"]
+    }
+  ]
+}

@@ -34,6 +34,8 @@ class SettingsWindow(tk.Toplevel):
         self.auto_antics_min_var = tk.IntVar(value=app.auto_antics_min_minutes)
         self.auto_antics_max_var = tk.IntVar(value=app.auto_antics_max_minutes)
         self.auto_antics_dance_var = tk.IntVar(value=app.auto_antics_dance_chance)
+        self.rare_events_var = tk.BooleanVar(value=app.rare_events_enabled)
+        self.chaos_mode_var = tk.BooleanVar(value=app.chaos_mode)
         self.reaction_vars = {
             "usb": tk.BooleanVar(value=app.reaction_toggles.get("usb", True)),
             "battery": tk.BooleanVar(value=app.reaction_toggles.get("battery", True)),
@@ -41,6 +43,10 @@ class SettingsWindow(tk.Toplevel):
             "updates": tk.BooleanVar(value=app.reaction_toggles.get("updates", True)),
             "pet_chat": tk.BooleanVar(value=app.reaction_toggles.get("pet_chat", True)),
             "random_sayings": tk.BooleanVar(value=app.reaction_toggles.get("random_sayings", True)),
+        }
+        self.quote_pack_vars = {
+            pack["key"]: tk.BooleanVar(value=pack["enabled"])
+            for pack in app.available_quote_packs()
         }
         self.status_var = tk.StringVar(value=f"Version {APP_VERSION}")
         self.skin_meta_var = tk.StringVar()
@@ -255,6 +261,42 @@ class SettingsWindow(tk.Toplevel):
                 justify="left",
             ).pack(anchor="w", pady=(6, 0))
 
+        tk.Label(reactions, text="Special behavior", bg="#f4f1de", fg="#1a1a2e").pack(anchor="w", pady=(12, 0))
+        tk.Checkbutton(
+            reactions,
+            text="Enable rare events",
+            variable=self.rare_events_var,
+            bg="#f4f1de",
+            fg="#1a1a2e",
+            selectcolor="#f4f1de",
+        ).pack(anchor="w", pady=(6, 0))
+        tk.Checkbutton(
+            reactions,
+            text="Chaos mode (more toy-heavy antics)",
+            variable=self.chaos_mode_var,
+            bg="#f4f1de",
+            fg="#1a1a2e",
+            selectcolor="#f4f1de",
+            wraplength=240,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 0))
+
+        packs = tk.LabelFrame(parent, text="Quote Packs", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
+        packs.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        if not self.quote_pack_vars:
+            tk.Label(packs, text="No quote packs loaded.", bg="#f4f1de", fg="#1a1a2e").pack(anchor="w")
+        for pack in self.app.available_quote_packs():
+            tk.Checkbutton(
+                packs,
+                text=f"{pack['label']} ({pack['quote_count']})",
+                variable=self.quote_pack_vars[pack["key"]],
+                bg="#f4f1de",
+                fg="#1a1a2e",
+                selectcolor="#f4f1de",
+                wraplength=220,
+                justify="left",
+            ).pack(anchor="w", pady=(4, 0))
+
     def _build_pets_tab(self, parent):
         pets = tk.LabelFrame(parent, text="Active Pets", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
         pets.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
@@ -292,9 +334,11 @@ class SettingsWindow(tk.Toplevel):
     def _refresh_skin_metadata(self):
         skin_key = self.label_to_key.get(self.skin_var.get(), self.app.skin_key)
         metadata = self.app.skin_metadata(skin_key)
+        tags = ", ".join(metadata.get("tags", [])) or "none"
         self.skin_meta_var.set(
             f"Author: {metadata.get('author', 'Unknown')}\n"
             f"Version: {metadata.get('version', '1.0')}\n"
+            f"Tags: {tags}\n"
             f"{metadata.get('description', 'No description provided.')}"
         )
 
@@ -315,9 +359,13 @@ class SettingsWindow(tk.Toplevel):
             auto_antics_min_minutes=self.auto_antics_min_var.get(),
             auto_antics_max_minutes=self.auto_antics_max_var.get(),
             auto_antics_dance_chance=self.auto_antics_dance_var.get(),
+            rare_events_enabled=self.rare_events_var.get(),
+            chaos_mode=self.chaos_mode_var.get(),
             pet_name=self.pet_name_var.get().strip() or self.app.pet_name,
             reaction_toggles=reaction_toggles,
         )
+        for pack_key, variable in self.quote_pack_vars.items():
+            self.app.set_quote_pack_enabled(pack_key, variable.get())
         self._refresh_skin_metadata()
         self._refresh_history_lists()
         self.status_var.set("Settings applied")

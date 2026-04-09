@@ -17,15 +17,70 @@ class AnimationFrame:
     delay_ms: int
 
 
+def _normalize_sequence(sequence, fallback):
+    normalized = []
+    for entry in list(sequence or []):
+        if isinstance(entry, dict):
+            frame_key = str(entry.get("frame", entry.get("frame_key", ""))).strip()
+            if not frame_key:
+                continue
+            normalized.append(
+                {
+                    "frame": frame_key,
+                    "offset_y": int(entry.get("offset_y", 0)),
+                    "delay_ms": entry.get("delay_ms"),
+                }
+            )
+            continue
+        if isinstance(entry, str):
+            normalized.append({"frame": entry.strip(), "offset_y": 0, "delay_ms": None})
+            continue
+        if isinstance(entry, (list, tuple)) and entry:
+            normalized.append(
+                {
+                    "frame": str(entry[0]).strip(),
+                    "offset_y": int(entry[1]) if len(entry) > 1 else 0,
+                    "delay_ms": entry[2] if len(entry) > 2 else None,
+                }
+            )
+    if normalized:
+        return normalized
+    return [dict(entry) for entry in fallback]
+
+
 class AnimationController:
     def __init__(self):
         self.is_dancing = False
         self.dance_frame_idx = 0
         self.idle_frame_idx = 0
+        self.idle_sequence = _normalize_sequence(
+            [{"frame": frame_key, "offset_y": offset_y} for frame_key, offset_y in IDLE_SEQUENCE],
+            [],
+        )
+        self.interaction_sequence = _normalize_sequence(
+            [{"frame": frame_key, "offset_y": 0} for frame_key in DANCE_SEQUENCE],
+            [],
+        )
+
+    def set_sequences(self, idle_sequence=None, interaction_sequence=None):
+        self.idle_sequence = _normalize_sequence(
+            idle_sequence,
+            [{"frame": frame_key, "offset_y": offset_y} for frame_key, offset_y in IDLE_SEQUENCE],
+        )
+        self.interaction_sequence = _normalize_sequence(
+            interaction_sequence,
+            [{"frame": frame_key, "offset_y": 0} for frame_key in DANCE_SEQUENCE],
+        )
+        self.idle_frame_idx = 0
+        if not self.is_dancing:
+            self.dance_frame_idx = 0
 
     def start_dance(self):
+        if not self.interaction_sequence:
+            return False
         self.is_dancing = True
         self.dance_frame_idx = 0
+        return True
 
     def reset_idle(self):
         self.is_dancing = False
@@ -39,21 +94,27 @@ class AnimationController:
 
     def next_frame(self, mood_key):
         mood = MOODS.get(mood_key, MOODS["happy"])
-        if self.is_dancing:
-            frame_key = DANCE_SEQUENCE[self.dance_frame_idx % len(DANCE_SEQUENCE)]
+        if self.is_dancing and self.interaction_sequence:
+            entry = self.interaction_sequence[self.dance_frame_idx % len(self.interaction_sequence)]
             self.dance_frame_idx += 1
-            if self.dance_frame_idx >= len(DANCE_SEQUENCE) * 3:
+            if self.dance_frame_idx >= len(self.interaction_sequence) * 3:
                 self.reset_idle()
             return AnimationFrame(
-                frame_key=frame_key,
-                offset_y=0,
-                delay_ms=max(85, int(DANCE_BASE_DELAY_MS * mood["speed"])),
+                frame_key=entry["frame"],
+                offset_y=int(entry.get("offset_y", 0)),
+                delay_ms=max(
+                    85,
+                    int((entry.get("delay_ms") or DANCE_BASE_DELAY_MS) * mood["speed"]),
+                ),
             )
 
-        frame_key, offset_y = IDLE_SEQUENCE[self.idle_frame_idx % len(IDLE_SEQUENCE)]
+        entry = self.idle_sequence[self.idle_frame_idx % len(self.idle_sequence)]
         self.idle_frame_idx += 1
         return AnimationFrame(
-            frame_key=frame_key,
-            offset_y=offset_y,
-            delay_ms=max(120, int(IDLE_BASE_DELAY_MS * mood["speed"])),
+            frame_key=entry["frame"],
+            offset_y=int(entry.get("offset_y", 0)),
+            delay_ms=max(
+                120,
+                int((entry.get("delay_ms") or IDLE_BASE_DELAY_MS) * mood["speed"]),
+            ),
         )

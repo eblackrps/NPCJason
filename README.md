@@ -2,32 +2,37 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.3.0`
+> **Current release target:** `v1.4.0`
 
 ---
 
-## What’s New In v1.3.0
+## What’s New In v1.4.0
 
-This release focuses on the post-stabilization hardening pass:
+This release focuses on making NPCJason feel more alive while keeping the post-refactor structure stable:
 
-- Thinner runtime composition with clearer window, tray, scheduler, persistence, and state boundaries
-- Explicit pause/suppression state for drag, tray hide, fullscreen, quiet hours, and screenshot recovery
-- Safer scheduler behavior with job ownership, retry tracking, queue backpressure logging, and cleaner shutdown
-- Single-flight update checks so repeated manual requests do not fan out overlapping background work
-- Stronger settings and shared-state sanitization, schema repair, corrupt-file backup, and atomic export/write behavior
-- More defensive dialogue, skin, and sound loading with bounded fallbacks instead of silent failure
-- Expanded regression coverage for runtime state, scheduler recovery, persistence repair, speech history, tray state, and update coordination
-- Build and release automation aligned with `pyproject.toml`, `pip check`, and compile-time sanity validation
+- Skin Framework v2 with tags, quote affinity, sound hooks, accessory offsets, and per-skin animation metadata
+- Four new built-in skins: Office Jason, Homelab Jason, Network Jason, and Responsible Jason
+- A reusable toy system with tricycle rides, rubber duck visits, a tiny homelab server cart, and stress-ball interactions
+- Structured quote-pack loading with enable/disable controls, weighting, and repeat suppression
+- A dedicated Jason quote pack added exactly as provided
+- Stronger tray, quick-menu, and settings controls for skins, toys, quotes, sound, and special behavior toggles
+- Lightweight rare events and tighter contextual behavior between skins, toys, and quotes
+- Ship-readiness fixes for quote-pack persistence, runtime validation, and release packaging polish
 
 ---
 
 ## Features
 
 - Multiple skins: Classic Jason, Wizard Jason, Knight Jason, and Astronaut Jason
+- Expanded built-in skins: Office Jason, Homelab Jason, Network Jason, and Responsible Jason
 - External skin packs that can be dropped into [`skins/`](./skins) and hot-reloaded live
+- Skin Framework v2 with tags, quote affinity, sound sets, accessory offsets, and per-skin animation metadata
 - Idle breathing and blinking animation
 - Mood system: happy, tired, caffeinated
 - Event reactions for removable drives, low battery, and focused window changes
+- Structured quote packs with enable/disable support and repeat suppression
+- Context-aware toy system with tricycle, rubber duck, tiny homelab server cart, and stress ball interactions
+- Lightweight rare-event system for low-frequency special moments
 - Optional sound effects with mute and volume control
 - Quiet hours and fullscreen suppression for automatic chatter
 - Custom sayings from `sayings.txt`
@@ -59,7 +64,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.3.0.exe` for the installer
+   - `NPCJason_Setup_1.4.0.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -69,7 +74,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 | Left-click | Dance + say something |
 | Right-click | Open the quick menu |
 | Click + drag | Move Jason anywhere |
-| Tray icon | Show/Hide, settings, skins, startup toggle, updates, summon/dismiss pets |
+| Tray icon | Show/Hide, settings, skins, toys, quote packs, rare events, startup toggle, updates, summon/dismiss pets |
 
 ### Custom sayings
 
@@ -90,7 +95,7 @@ NPCJason hot-reloads `sayings.txt` while running, so you usually do not need to 
 
 ### Dialogue packs
 
-Add extra `.txt` files to [`dialogue-packs/`](./dialogue-packs). They use the same section format as `sayings.txt` and also support placeholders like `{pet_name}` and `{active_window}`.
+Add extra `.txt` or `.json` files to [`dialogue-packs/`](./dialogue-packs). Text packs use the same section format as `sayings.txt`; JSON packs add categories, affinity rules, and weighting.
 
 ### Skin packs
 
@@ -153,7 +158,7 @@ This installs dependencies from [`pyproject.toml`](./pyproject.toml), runs tests
 build_installer.bat
 ```
 
-This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.3.0.exe`.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.4.0.exe`.
 
 ### Release automation
 
@@ -181,8 +186,11 @@ Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github
 | `npcjason_app/settings_service.py` | Settings load/save/import/export/reset logic |
 | `npcjason_app/persistence.py` | Settings/shared-state schema sanitization |
 | `npcjason_app/speech_history.py` | Recent/favorite saying history management |
-| `npcjason_app/dialogue.py` | Sayings, dialogue packs, event text |
+| `npcjason_app/dialogue.py` | Quote packs, dialogue selection, repeat suppression, event text |
 | `npcjason_app/skins.py` | Frame rendering + skin loading |
+| `npcjason_app/toys.py` | Toy definitions, cooldowns, and runtime toy behavior |
+| `npcjason_app/toy_window.py` | Lightweight companion windows used for toy rendering |
+| `npcjason_app/rare_events.py` | Low-frequency contextual event selection |
 | `npcjason_app/updates.py` | Update parsing, async checks, and prompt coordination |
 | `npcjason_app/tray_controller.py` | System tray adapter and tray-state modeling |
 | `npcjason_app/windows_platform.py` | Screen/work-area geometry helpers |

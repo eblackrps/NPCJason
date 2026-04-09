@@ -20,6 +20,14 @@ except ImportError:
 SOUND_PATTERNS = {
     "speech": [(0.04, 880), (0.03, 660)],
     "dance": [(0.05, 523), (0.05, 659), (0.07, 784)],
+    "tricycle": [(0.04, 659), (0.03, 784), (0.03, 988)],
+    "duck": [(0.05, 740), (0.04, 622)],
+    "server_cart": [(0.04, 392), (0.04, 440), (0.04, 523)],
+    "stress_ball": [(0.03, 392), (0.03, 330), (0.02, 294)],
+    "office_interaction": [(0.03, 784), (0.03, 988), (0.03, 1175)],
+    "homelab_interaction": [(0.04, 349), (0.04, 440), (0.04, 523)],
+    "network_interaction": [(0.03, 1047), (0.03, 1319), (0.03, 1568)],
+    "responsible_interaction": [(0.04, 523), (0.04, 659), (0.05, 698)],
 }
 _STOP_SENTINEL = object()
 
@@ -128,6 +136,10 @@ class SoundManager:
             except queue.Empty:
                 pass
             self._play_queue.put_nowait(_STOP_SENTINEL)
+
+    @classmethod
+    def has_effect(cls, effect_name):
+        return str(effect_name) in SOUND_PATTERNS
 
     @classmethod
     def preview_effect(cls, effect_name, enabled=True, volume=70, logger=None):

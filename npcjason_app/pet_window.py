@@ -145,10 +145,10 @@ class PetWindow:
         if bubble.winfo_exists():
             bubble.destroy()
 
-    def show_bubble(self, text):
+    def show_bubble(self, text, offset_x=0, offset_y=0):
         self.destroy_bubble()
-        center_x = self.root.winfo_x() + CANVAS_W // 2
-        top_y = self.root.winfo_y()
+        center_x = self.root.winfo_x() + CANVAS_W // 2 + int(offset_x)
+        top_y = self.root.winfo_y() + int(offset_y)
         bubble = SpeechBubble(center_x, top_y, text, master=self.root)
         bubble.update_idletasks()
         x, y = bubble_position(

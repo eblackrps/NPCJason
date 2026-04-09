@@ -1,8 +1,8 @@
 # Dialogue Packs
 
-Add `.txt` files to this folder to extend NPCJason's quote pool without changing code. NPCJason hot-reloads this directory while running and logs warnings for malformed sections or unknown template tokens instead of breaking the runtime.
+Add `.txt` or `.json` files to this folder to extend NPCJason's quote pool without changing code. NPCJason hot-reloads this directory while running and logs warnings for malformed sections or unknown template tokens instead of breaking the runtime.
 
-Rules:
+Legacy `.txt` packs:
 
 - Separate sayings with a blank line
 - Optional mood sections: `[any]`, `[happy]`, `[tired]`, `[caffeinated]`
@@ -23,4 +23,38 @@ Today is a very good patch day.
 
 [tired]
 I am approximately {battery_percent}% caffeine and hope.
+```
+
+Structured `.json` packs:
+
+- `key`: unique pack id
+- `label`: display name shown in menus
+- `description`: optional summary
+- `weight`: optional pack weight
+- `enabled`: optional default enabled flag
+- `categories`: optional pack-wide categories
+- `quotes`: list of strings or objects
+- quote objects support `text`, `weight`, `moods`, `categories`, and `affinity`
+- affinity keys can include `skins`, `tags`, `contexts`, `toys`, `moods`, `packs`, and `categories`
+
+Example:
+
+```json
+{
+  "key": "team-quotes",
+  "label": "Team Quotes",
+  "description": "Context-aware office lines.",
+  "weight": 2,
+  "quotes": [
+    "Status page is looking at me funny.",
+    {
+      "text": "Routing day.",
+      "categories": ["network"],
+      "affinity": {
+        "skins": ["network"],
+        "contexts": ["focus"]
+      }
+    }
+  ]
+}
 ```
