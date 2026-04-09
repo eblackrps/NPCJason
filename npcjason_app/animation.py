@@ -92,8 +92,18 @@ class AnimationController:
         if not self.is_dancing:
             self.dance_frame_idx = 0
 
-    def next_frame(self, mood_key):
+    def next_frame(self, mood_key, personality_profile=None):
         mood = MOODS.get(mood_key, MOODS["happy"])
+        personality_profile = personality_profile if isinstance(personality_profile, dict) else {}
+        delay_scale = max(0.5, float(personality_profile.get("delay_scale", 1.0)))
+        extra_offset_y = int(personality_profile.get("offset_y", 0))
+        bob_px = int(personality_profile.get("bob_px", 0))
+        jitter_px = int(personality_profile.get("jitter_px", 0))
+        state_wave = 0
+        if bob_px:
+            state_wave = bob_px if (self.idle_frame_idx + self.dance_frame_idx) % 2 == 0 else -bob_px
+        if jitter_px:
+            state_wave += jitter_px if (self.idle_frame_idx + self.dance_frame_idx) % 3 == 0 else 0
         if self.is_dancing and self.interaction_sequence:
             entry = self.interaction_sequence[self.dance_frame_idx % len(self.interaction_sequence)]
             self.dance_frame_idx += 1
@@ -101,10 +111,10 @@ class AnimationController:
                 self.reset_idle()
             return AnimationFrame(
                 frame_key=entry["frame"],
-                offset_y=int(entry.get("offset_y", 0)),
+                offset_y=int(entry.get("offset_y", 0)) + extra_offset_y + state_wave,
                 delay_ms=max(
                     85,
-                    int((entry.get("delay_ms") or DANCE_BASE_DELAY_MS) * mood["speed"]),
+                    int((entry.get("delay_ms") or DANCE_BASE_DELAY_MS) * mood["speed"] * delay_scale),
                 ),
             )
 
@@ -112,9 +122,9 @@ class AnimationController:
         self.idle_frame_idx += 1
         return AnimationFrame(
             frame_key=entry["frame"],
-            offset_y=int(entry.get("offset_y", 0)),
+            offset_y=int(entry.get("offset_y", 0)) + extra_offset_y + state_wave,
             delay_ms=max(
                 120,
-                int((entry.get("delay_ms") or IDLE_BASE_DELAY_MS) * mood["speed"]),
+                int((entry.get("delay_ms") or IDLE_BASE_DELAY_MS) * mood["speed"] * delay_scale),
             ),
         )

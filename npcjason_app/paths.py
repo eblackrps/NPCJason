@@ -5,9 +5,10 @@ import sys
 from .version import APP_NAME
 
 
-RESOURCE_DIR = Path(
-    sys.executable if getattr(sys, "frozen", False) else __file__
-).resolve().parent.parent
+if getattr(sys, "frozen", False):
+    RESOURCE_DIR = Path(sys.executable).resolve().parent
+else:
+    RESOURCE_DIR = Path(__file__).resolve().parent.parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", RESOURCE_DIR))
 APPDATA_DIR = Path(
     os.getenv("APPDATA", str(Path.home() / "AppData" / "Roaming"))

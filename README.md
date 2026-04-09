@@ -2,22 +2,23 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.4.0`
+> **Current release target:** `v1.5.0`
 
 ---
 
-## What’s New In v1.4.0
+## What’s New In v1.5.0
 
-This release focuses on making NPCJason feel more alive while keeping the post-refactor structure stable:
+This release focuses on making NPCJason feel smarter, stranger, and more memorable during long desktop sessions:
 
-- Skin Framework v2 with tags, quote affinity, sound hooks, accessory offsets, and per-skin animation metadata
-- Four new built-in skins: Office Jason, Homelab Jason, Network Jason, and Responsible Jason
-- A reusable toy system with tricycle rides, rubber duck visits, a tiny homelab server cart, and stress-ball interactions
-- Structured quote-pack loading with enable/disable controls, weighting, and repeat suppression
-- A dedicated Jason quote pack added exactly as provided
-- Stronger tray, quick-menu, and settings controls for skins, toys, quotes, sound, and special behavior toggles
-- Lightweight rare events and tighter contextual behavior between skins, toys, and quotes
-- Ship-readiness fixes for quote-pack persistence, runtime validation, and release packaging polish
+- Expanded personality states with mood-driven quote, movement, and scenario bias
+- Smarter desktop movement with pacing, hesitation, edge inspection, and safer recovery near corners and boundaries
+- Gag chains and mini-scenarios including Busy IT Morning, Homelab Troubleshooting, Network Victory Lap, Responsible Adult Moment, and Office Chaos
+- Favorites and personalization that gently bias skins, toys, scenarios, and quote packs toward your preferred flavor of desktop menace
+- Discoveries and unlockables, including Astronaut Jason and extra long-session surprises
+- Seasonal and special-event support such as Monday Morning Survival, Patch Day Panic, and Homelab Weekend
+- Richer optional audio behavior with category-aware mute handling and fast tray access
+- Stronger persistence for favorites, unlocks, special modes, mute state, and scenario continuity
+- “What do” sayings plus release-hardening fixes for unlock gating, packaged resource loading, and sound-category behavior
 
 ---
 
@@ -29,16 +30,22 @@ This release focuses on making NPCJason feel more alive while keeping the post-r
 - Skin Framework v2 with tags, quote affinity, sound sets, accessory offsets, and per-skin animation metadata
 - Idle breathing and blinking animation
 - Mood system: happy, tired, caffeinated
+- Personality state system with idle, curious, smug, busy, annoyed, celebrating, confused, sneaky, and exhausted behavior
+- Autonomous desktop movement with pacing, hesitation, edge inspection, and better recovery from awkward pathing
 - Event reactions for removable drives, low battery, and focused window changes
 - Structured quote packs with enable/disable support and repeat suppression
+- Context-aware mini-scenarios and gag chains such as Busy IT Morning, Homelab Troubleshooting, Network Victory Lap, Responsible Adult Moment, and Office Chaos
 - Context-aware toy system with tricycle, rubber duck, tiny homelab server cart, and stress ball interactions
 - Lightweight rare-event system for low-frequency special moments
+- Favorites that bias skins, toys, scenarios, and quote packs toward your preferred flavor of desktop menace
+- Unlockable discoveries including bonus quote/scenario content and Astronaut Jason
+- Seasonal and special modes such as April Fools, Patch Day Panic, Homelab Weekend, and Monday Morning Survival
 - Optional sound effects with mute and volume control
 - Quiet hours and fullscreen suppression for automatic chatter
 - Custom sayings from `sayings.txt`
 - Extra dialogue packs from [`dialogue-packs/`](./dialogue-packs)
 - Favorites and recent-saying history
-- Settings persistence in `%APPDATA%\NPCJason\settings.json`
+- Settings persistence in `%APPDATA%\NPCJason\settings.json`, including selected skin, quote packs, discoveries, favorites, mute state, and recent scenario continuity
 - Multi-pet support with light pet-to-pet chatter
 - Update checks against the GitHub releases feed
 - Diagnostics log output in `%APPDATA%\NPCJason\logs\npcjason.log`
@@ -64,7 +71,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.4.0.exe` for the installer
+   - `NPCJason_Setup_1.5.0.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -74,7 +81,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 | Left-click | Dance + say something |
 | Right-click | Open the quick menu |
 | Click + drag | Move Jason anywhere |
-| Tray icon | Show/Hide, settings, skins, toys, quote packs, rare events, startup toggle, updates, summon/dismiss pets |
+| Tray icon | Show/Hide, settings, skins, toys, scenarios, quote packs, discoveries, mute, special modes, updates, summon/dismiss pets |
 
 ### Custom sayings
 
@@ -158,7 +165,7 @@ This installs dependencies from [`pyproject.toml`](./pyproject.toml), runs tests
 build_installer.bat
 ```
 
-This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.4.0.exe`.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.5.0.exe`.
 
 ### Release automation
 
@@ -187,6 +194,11 @@ Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github
 | `npcjason_app/persistence.py` | Settings/shared-state schema sanitization |
 | `npcjason_app/speech_history.py` | Recent/favorite saying history management |
 | `npcjason_app/dialogue.py` | Quote packs, dialogue selection, repeat suppression, event text |
+| `npcjason_app/personality.py` | Personality states, moodful transitions, and quote/movement bias |
+| `npcjason_app/movement.py` | Autonomous desktop movement planning and recovery |
+| `npcjason_app/scenarios.py` | Gag-chain and mini-scenario definitions/runtime |
+| `npcjason_app/seasonal.py` | Seasonal and special-mode activation rules |
+| `npcjason_app/unlocks.py` | Discoveries, unlockables, and progress tracking |
 | `npcjason_app/skins.py` | Frame rendering + skin loading |
 | `npcjason_app/toys.py` | Toy definitions, cooldowns, and runtime toy behavior |
 | `npcjason_app/toy_window.py` | Lightweight companion windows used for toy rendering |

@@ -17,15 +17,21 @@ from .coordination import PresenceRecord, PetCoordinator
 from .data.defaults import MOODS, default_settings, default_shared_state
 from .diagnostics import DiagnosticsLogger
 from .dialogue import DialogueLibrary, PET_CONVERSATIONS, render_template
+from .movement import MovementController
 from .paths import RESOURCE_DIR, SETTINGS_PATH, SHARED_STATE_PATH
 from .pet_window import PetWindow
+from .personality import PersonalityController
 from .rare_events import RareEventManager
 from .runtime_state import RuntimeStateController, is_screenshot_window_title, quiet_hours_active
+from .scenarios import ScenarioManager
 from .scheduler import ManagedTkScheduler
+from .seasonal import SeasonalModeManager
 from .settings_service import GlobalSettings, InstanceSettings, SettingsService
 from .settings_window import SettingsWindow
 from .skins import (
     BASE_PALETTE,
+    CANVAS_H,
+    CANVAS_W,
     build_skin_assets,
     load_skin_bundle,
 )
@@ -39,10 +45,13 @@ from .tray_controller import (
     TrayController,
     TrayPetOption,
     TrayQuotePackOption,
+    TrayScenarioOption,
+    TraySeasonOption,
     TraySkinOption,
     TrayState,
     TrayToyOption,
 )
+from .unlocks import UnlockManager
 from .updates import UpdateChecker, UpdateCoordinator
 from .version import APP_NAME, APP_VERSION
 from .windows_events import (
@@ -52,6 +61,7 @@ from .windows_events import (
     get_removable_drives,
     is_foreground_fullscreen,
 )
+from .windows_platform import DesktopBounds
 
 
 RANDOM_SAYING_RANGE_MS = (3 * 60 * 1000, 8 * 60 * 1000)
@@ -65,6 +75,10 @@ UPDATE_CHECK_DELAY_MS = 10000
 EDGE_SNAP_MARGIN = 28
 SUPPRESSION_POLL_MS = 1200
 RARE_EVENT_RANGE_MS = (9 * 60 * 1000, 16 * 60 * 1000)
+PERSONALITY_TICK_RANGE_MS = (3500, 6500)
+MOVEMENT_TICK_MS = 140
+SCENARIO_TICK_MS = 150
+CONTINUITY_TICK_MS = 60 * 1000
 
 
 class NPCJasonApp:
@@ -81,8 +95,13 @@ class NPCJasonApp:
         self.scheduler = ManagedTkScheduler(self.root, logger=self.logger)
         self.runtime_state = RuntimeStateController(logger=self.logger)
         self.animation = AnimationController()
+        self.movement = MovementController(logger=self.logger)
+        self.personality = PersonalityController(logger=self.logger)
         self.toy_manager = ToyManager(self.root, logger=self.logger)
         self.rare_event_manager = RareEventManager(logger=self.logger)
+        self.scenario_manager = ScenarioManager(logger=self.logger)
+        self.unlock_manager = UnlockManager(logger=self.logger)
+        self.seasonal_manager = SeasonalModeManager()
 
         self.settings_store = JsonStore(SETTINGS_PATH, default_settings, logger=self.logger, store_name="settings")
         self.shared_state_store = JsonStore(
@@ -129,6 +148,17 @@ class NPCJasonApp:
         self.quote_pack_states = {}
         self.rare_events_enabled = True
         self.chaos_mode = False
+        self.sound_categories = {}
+        self.movement_enabled = True
+        self.unlocks_enabled = True
+        self.seasonal_mode_override = "auto"
+        self.last_active_season = ""
+        self.favorite_skin_keys = []
+        self.favorite_toy_keys = []
+        self.favorite_scenario_keys = []
+        self.favorite_quote_pack_keys = []
+        self.last_scenario_key = ""
+        self.recent_scenario_keys = []
         self._ride_origin_position = None
 
         self.canvas = self.window.canvas
@@ -143,6 +173,7 @@ class NPCJasonApp:
         self.window.draw_frame(self.active_frames["idle_open"], self.active_palette)
         self.runtime_state.mark_initialized()
         self.runtime_state.mark_running()
+        self._record_discovery_progress("launches", 1, schedule_save=False)
         self._publish_presence()
         self._start_runtime_loops()
 
@@ -165,6 +196,7 @@ class NPCJasonApp:
         self.saved_window_y = instance_settings.y
         self.sound_enabled = bool(global_settings.sound_enabled)
         self.sound_volume = int(global_settings.sound_volume)
+        self.sound_categories = dict(global_settings.sound_categories)
         self.auto_update_enabled = bool(global_settings.auto_update_enabled)
         self.event_reactions_enabled = bool(global_settings.event_reactions_enabled)
         self.quiet_hours_enabled = bool(global_settings.quiet_hours_enabled)
@@ -177,17 +209,39 @@ class NPCJasonApp:
         self.auto_antics_dance_chance = int(global_settings.auto_antics_dance_chance)
         self.rare_events_enabled = bool(global_settings.rare_events_enabled)
         self.chaos_mode = bool(global_settings.chaos_mode)
+        self.movement_enabled = bool(global_settings.movement_enabled)
+        self.unlocks_enabled = bool(global_settings.unlocks_enabled)
+        self.seasonal_mode_override = str(global_settings.seasonal_mode_override or "auto")
+        self.last_active_season = str(global_settings.last_active_season or "")
         self.reaction_toggles = dict(global_settings.reaction_toggles)
         self.quote_pack_states = dict(global_settings.quote_pack_states)
+        self.favorite_skin_keys = list(global_settings.favorite_skins)
+        self.favorite_toy_keys = list(global_settings.favorite_toys)
+        self.favorite_scenario_keys = list(global_settings.favorite_scenarios)
+        self.favorite_quote_pack_keys = list(global_settings.favorite_quote_packs)
+        self.recent_scenario_keys = list(global_settings.recent_scenarios)
         self.speech_history.load(
             recent=global_settings.recent_sayings,
             favorites=global_settings.favorite_templates,
         )
         self.pet_name = str(instance_settings.name)
-        self.dialogue.set_pack_states(self.quote_pack_states)
+        self.last_scenario_key = str(instance_settings.last_scenario or "")
+        self.personality.load(instance_settings.personality_state)
+        self.unlock_manager.load(
+            enabled=self.unlocks_enabled,
+            unlocked_skins=global_settings.unlocked_skins,
+            unlocked_toys=global_settings.unlocked_toys,
+            unlocked_scenarios=global_settings.unlocked_scenarios,
+            unlocked_quote_packs=global_settings.unlocked_quote_packs,
+            discovery_stats=global_settings.discovery_stats,
+        )
+        self.scenario_manager.load_recent(self.recent_scenario_keys)
+        self.seasonal_manager.set_override(self.seasonal_mode_override)
+        self.seasonal_mode_override = self.seasonal_manager.override
 
         self.sound_manager.set_enabled(self.sound_enabled)
         self.sound_manager.set_volume(self.sound_volume)
+        self.sound_manager.set_categories(self.sound_categories)
 
         skin_bundle = load_skin_bundle()
         self.skins = skin_bundle["definitions"]
@@ -202,8 +256,12 @@ class NPCJasonApp:
         if self.mood not in MOODS:
             self.mood = random.choice(list(MOODS.keys()))
 
+        if not self.unlock_manager.is_unlocked("skin", self.skin_key):
+            self.skin_key = "jason"
+
         self._apply_skin_assets()
         self.animation.on_skin_changed()
+        self._apply_dialogue_pack_states()
         self._refresh_suppression_state()
 
     def _apply_skin_assets(self):
@@ -284,6 +342,13 @@ class NPCJasonApp:
             owner="behavior",
         )
         self.scheduler.schedule_loop(
+            "movement_tick",
+            self._movement_tick,
+            initial_delay_ms=1200,
+            default_delay_ms=MOVEMENT_TICK_MS,
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
             "random_saying",
             self._random_saying_tick,
             initial_delay_ms=self._random_delay(RANDOM_SAYING_RANGE_MS),
@@ -291,10 +356,31 @@ class NPCJasonApp:
             owner="speech",
         )
         self.scheduler.schedule_loop(
+            "personality_tick",
+            self._personality_tick,
+            initial_delay_ms=self._random_delay(PERSONALITY_TICK_RANGE_MS),
+            default_delay_ms=PERSONALITY_TICK_RANGE_MS[0],
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
             "mood_shift",
             self._rotate_mood,
             initial_delay_ms=self._random_delay(MOOD_SHIFT_RANGE_MS),
             default_delay_ms=MOOD_SHIFT_RANGE_MS[0],
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
+            "scenario_tick",
+            self._scenario_tick,
+            initial_delay_ms=SCENARIO_TICK_MS,
+            default_delay_ms=SCENARIO_TICK_MS,
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
+            "continuity_tick",
+            self._continuity_tick,
+            initial_delay_ms=CONTINUITY_TICK_MS,
+            default_delay_ms=CONTINUITY_TICK_MS,
             owner="behavior",
         )
         self.scheduler.schedule_loop(
@@ -352,9 +438,13 @@ class NPCJasonApp:
                 toggle_sound=self._toggle_sound_enabled,
                 toggle_rare_events=self._toggle_rare_events_enabled,
                 toggle_chaos_mode=self._toggle_chaos_mode,
+                toggle_movement=self._toggle_movement_enabled,
+                toggle_unlocks=self._toggle_unlocks_enabled,
                 trigger_toy=self._trigger_toy_from_menu,
                 trigger_quote=lambda: self._show_saying(True),
                 toggle_quote_pack=self._toggle_quote_pack,
+                trigger_scenario=self._trigger_scenario_from_menu,
+                set_seasonal_mode=self._set_seasonal_mode,
                 bring_back=self.bring_back_on_screen,
                 check_updates=self.check_for_updates_manual,
                 open_releases=self._open_releases_page,
@@ -399,6 +489,196 @@ class NPCJasonApp:
             ordered.append(text)
         return ordered
 
+    def _is_unlocked(self, item_type, item_key):
+        return self.unlock_manager.is_unlocked(item_type, item_key)
+
+    def _effective_quote_pack_states(self):
+        states = dict(self.quote_pack_states)
+        if not self.unlocks_enabled:
+            return states
+        for pack in self.dialogue.available_packs():
+            if not self._is_unlocked("quote_pack", pack["key"]):
+                states[pack["key"]] = False
+        return states
+
+    def _apply_dialogue_pack_states(self):
+        self.dialogue.set_pack_states(self._effective_quote_pack_states())
+
+    def _seasonal_context(self):
+        context = self.seasonal_manager.context()
+        if context.get("active_keys"):
+            self.last_active_season = context["active_keys"][0]
+        elif self.seasonal_mode_override == "off":
+            self.last_active_season = ""
+        return context
+
+    def _active_scenario_label(self):
+        active_key = self.scenario_manager.active_scenario_key()
+        if not active_key:
+            return ""
+        for item in self.available_scenarios():
+            if item["key"] == active_key:
+                return item["label"]
+        return active_key
+
+    def _personality_label(self):
+        return self.personality.snapshot()["label"]
+
+    def _favorite_list_for(self, item_type):
+        mapping = {
+            "skin": self.favorite_skin_keys,
+            "toy": self.favorite_toy_keys,
+            "scenario": self.favorite_scenario_keys,
+            "quote_pack": self.favorite_quote_pack_keys,
+        }
+        return mapping.get(str(item_type or "").strip(), [])
+
+    def _is_favorite(self, item_type, item_key):
+        key = str(item_key or "").strip()
+        return bool(key and key in self._favorite_list_for(item_type))
+
+    def _set_favorite(self, item_type, item_key, enabled):
+        key = str(item_key or "").strip()
+        if not key:
+            return False
+        values = list(self._favorite_list_for(item_type))
+        changed = False
+        if enabled and key not in values:
+            values.append(key)
+            changed = True
+        elif not enabled and key in values:
+            values = [item for item in values if item != key]
+            changed = True
+        if not changed:
+            return False
+        normalized = self._dedupe(values)
+        if item_type == "skin":
+            self.favorite_skin_keys = normalized
+        elif item_type == "toy":
+            self.favorite_toy_keys = normalized
+        elif item_type == "scenario":
+            self.favorite_scenario_keys = normalized
+        elif item_type == "quote_pack":
+            self.favorite_quote_pack_keys = normalized
+        else:
+            return False
+        self._schedule_settings_save()
+        self._refresh_tray()
+        return True
+
+    @staticmethod
+    def _weighted_choice(weighted):
+        if not weighted:
+            return None
+        total = sum(max(1, int(weight)) for _value, weight in weighted)
+        if total <= 0:
+            return weighted[-1][0]
+        pick = random.uniform(0, total)
+        current = 0.0
+        for value, weight in weighted:
+            current += max(1, int(weight))
+            if pick <= current:
+                return value
+        return weighted[-1][0]
+
+    def _skin_weight(self, skin_key, preferred_tags=None):
+        metadata = self.skin_metadata(skin_key)
+        tags = set(metadata.get("tags", []))
+        preferred = set(self._dedupe(preferred_tags))
+        seasonal_tags = set(self._seasonal_context().get("preferred_skin_tags", []))
+        current_tags = set(self.skin_tags)
+        weight = 1
+        if skin_key == self.skin_key:
+            weight += 2
+        if skin_key in self.favorite_skin_keys:
+            weight += 4
+        if preferred and preferred & tags:
+            weight += 4
+        if seasonal_tags and seasonal_tags & tags:
+            weight += 2
+        if skin_key != self.skin_key and current_tags and current_tags & tags:
+            weight += 1
+        return weight
+
+    def _preferred_skin_key(self, preferred_tags=None, include_current=True):
+        weighted = []
+        for skin_key in self.available_skin_keys():
+            if not include_current and skin_key == self.skin_key:
+                continue
+            weighted.append((skin_key, self._skin_weight(skin_key, preferred_tags=preferred_tags)))
+        return self._weighted_choice(weighted)
+
+    def _maybe_shift_skin_for_context(self, preferred_tags=None, reason="context", force=False):
+        if not preferred_tags:
+            return False
+        current_score = self._skin_weight(self.skin_key, preferred_tags=preferred_tags)
+        candidate = self._preferred_skin_key(preferred_tags=preferred_tags, include_current=False)
+        if not candidate:
+            return False
+        candidate_score = self._skin_weight(candidate, preferred_tags=preferred_tags)
+        if candidate_score <= current_score:
+            return False
+        if self.skin_key in self.favorite_skin_keys and current_score >= candidate_score - 1 and not force:
+            return False
+        if not force and candidate_score < current_score + 2:
+            return False
+        if not force and random.randint(1, 100) > 38:
+            return False
+        previous = self.skin_key
+        self._set_skin(candidate)
+        changed = previous != self.skin_key
+        if changed:
+            self.logger.info(f"skin: shifted {previous} -> {self.skin_key} ({reason})")
+        return changed
+
+    def _record_discovery_progress(self, counter_key, amount=1, schedule_save=True):
+        discoveries = self.unlock_manager.note_progress(counter_key, amount=amount)
+        if discoveries:
+            self._apply_dialogue_pack_states()
+            self._refresh_tray()
+        if discoveries or schedule_save:
+            self._schedule_settings_save()
+        return discoveries
+
+    def _flush_discovery_notifications(self, reveal_if_hidden=False):
+        pending = self.unlock_manager.pending_discoveries()
+        if not pending:
+            return False
+        if not self._can_speak(1):
+            self.unlock_manager.restore_pending(pending)
+            return False
+        for discovery in pending:
+            if discovery.item_type == "quote_pack":
+                self.quote_pack_states.pop(discovery.key, None)
+        self._apply_dialogue_pack_states()
+        first = pending[0]
+        label = first.label
+        text = f"Discovery unlocked:\n{label}"
+        if len(pending) > 1:
+            text += f"\n+{len(pending) - 1} more weird little thing(s)."
+        return self._show_text(text, reveal_if_hidden=reveal_if_hidden, source="discovery")
+
+    def _set_personality_state(self, state_key, reason="manual", duration_ms=None, lock_ms=0, play_sound=False):
+        changed = self.personality.transition_to(
+            state_key,
+            reason=reason,
+            duration_ms=duration_ms,
+            lock_ms=lock_ms,
+        )
+        if not changed:
+            return False
+        current_state = self.personality.current_state()
+        self._record_discovery_progress("state_changes", 1)
+        if current_state == "curious":
+            self._record_discovery_progress("curious_beats", 1, schedule_save=False)
+        if current_state == "confused":
+            self._record_discovery_progress("confused_beats", 1, schedule_save=False)
+        if play_sound:
+            self._play_state_sound(current_state)
+        self._flush_discovery_notifications(reveal_if_hidden=False)
+        self._refresh_tray()
+        return True
+
     def _active_toy_label(self, toy_key=None):
         active_key = toy_key or self.toy_manager.active_toy_key()
         if not active_key:
@@ -415,6 +695,8 @@ class NPCJasonApp:
             "pet_name": self.pet_name,
             "mood": MOODS[self.mood]["label"],
             "mood_key": self.mood,
+            "personality": self._personality_label(),
+            "personality_key": self.personality.current_state(),
             "time": now.strftime("%I:%M %p").lstrip("0"),
             "date": now.strftime("%Y-%m-%d"),
             "active_window": self.last_active_window_title or "desktop",
@@ -428,25 +710,41 @@ class NPCJasonApp:
         return context
 
     def _quote_selection_context(self, extra_contexts=None, extra_categories=None, extra_packs=None, toy_key=None):
+        seasonal = self._seasonal_context()
         contexts = self._dedupe(self.skin_quote_affinity.get("contexts", []))
+        contexts.extend(context for context in self.personality.quote_contexts() if context not in contexts)
         contexts.extend(context for context in self._dedupe(extra_contexts) if context not in contexts)
         contexts.extend(context for context in self.toy_manager.active_contexts() if context not in contexts)
+        contexts.extend(context for context in seasonal.get("contexts", []) if context not in contexts)
 
         preferred_categories = self._dedupe(self.skin_quote_affinity.get("categories", []))
+        preferred_categories.extend(
+            category for category in self.personality.preferred_categories() if category not in preferred_categories
+        )
         preferred_categories.extend(
             category for category in self._dedupe(extra_categories) if category not in preferred_categories
         )
         preferred_categories.extend(
             tag for tag in self.toy_manager.active_tags() if tag not in preferred_categories
         )
+        preferred_categories.extend(
+            category for category in seasonal.get("preferred_skin_tags", []) if category not in preferred_categories
+        )
 
         preferred_packs = self._dedupe(self.skin_quote_affinity.get("packs", []))
         preferred_packs.extend(pack for pack in self._dedupe(extra_packs) if pack not in preferred_packs)
+        preferred_packs.extend(
+            pack for pack in self.favorite_quote_pack_keys if pack not in preferred_packs and self._is_unlocked("quote_pack", pack)
+        )
+        preferred_packs.extend(
+            pack for pack in seasonal.get("preferred_quote_packs", []) if pack not in preferred_packs
+        )
 
         return {
             "skin_key": self.skin_key,
             "skin_tags": list(self.skin_tags),
             "mood_key": self.mood,
+            "personality_key": self.personality.current_state(),
             "contexts": contexts,
             "preferred_categories": preferred_categories,
             "preferred_packs": preferred_packs,
@@ -456,10 +754,15 @@ class NPCJasonApp:
     def _recent_templates(self):
         return [entry.get("template", entry.get("text", "")) for entry in self.speech_history.recent()]
 
-    def _play_effect(self, effect_name):
+    def _play_effect(self, effect_name, category="toy", throttle_ms=0, throttle_key=None):
         if not effect_name:
             return
-        self.sound_manager.play(effect_name)
+        self.sound_manager.play(
+            effect_name,
+            category=category,
+            throttle_ms=throttle_ms,
+            throttle_key=throttle_key,
+        )
 
     def _play_interaction_sound(self):
         custom_effect = None
@@ -467,7 +770,27 @@ class NPCJasonApp:
             candidate = str(self.skin_sound_set).replace("-", "_") + "_interaction"
             if self.sound_manager.has_effect(candidate):
                 custom_effect = candidate
-        self._play_effect(custom_effect or "dance")
+        self._play_effect(custom_effect or "dance", category="state", throttle_ms=1800, throttle_key="interaction")
+
+    def _play_state_sound(self, state_key):
+        definition = self.personality.definition(state_key)
+        if definition.sound_effect and self.sound_manager.has_effect(definition.sound_effect):
+            self._play_effect(
+                definition.sound_effect,
+                category="state",
+                throttle_ms=5500,
+                throttle_key=f"state:{definition.key}",
+            )
+
+    def _play_scenario_sound(self, scenario_key):
+        effect_name = "scenario_" + str(scenario_key).replace("-", "_")
+        if self.sound_manager.has_effect(effect_name):
+            self._play_effect(
+                effect_name,
+                category="scenario",
+                throttle_ms=9000,
+                throttle_key=f"scenario:{scenario_key}",
+            )
 
     def _is_quiet_hours_active(self):
         return quiet_hours_active(
@@ -495,6 +818,7 @@ class NPCJasonApp:
 
     def _record_saying(self, template_text, rendered_text, source):
         self.speech_history.record(template_text, rendered_text, source)
+        self._record_discovery_progress("quotes_spoken", 1, schedule_save=False)
         self._schedule_settings_save()
 
     def recent_saying_texts(self):
@@ -566,7 +890,10 @@ class NPCJasonApp:
         snapshot = self.runtime_state.snapshot()
         if not snapshot.should_animate:
             return 220
-        frame = self.animation.next_frame(self.mood)
+        frame = self.animation.next_frame(
+            self.mood,
+            personality_profile=self.personality.animation_profile(),
+        )
         self._render_pose(frame.frame_key, frame.offset_y)
         return frame.delay_ms
 
@@ -598,7 +925,7 @@ class NPCJasonApp:
             return False
 
         self.last_speech_at = time.time()
-        self.sound_manager.play("speech")
+        self._play_effect("speech", category="speech", throttle_ms=350, throttle_key="speech")
         self._record_saying(template_text or text, text, source)
         return True
 
@@ -651,22 +978,80 @@ class NPCJasonApp:
         return self._random_delay(MOOD_SHIFT_RANGE_MS)
 
     def available_skin_keys(self):
-        return sorted(self.skins.keys())
+        return sorted(
+            skin_key
+            for skin_key in self.skins.keys()
+            if self._is_unlocked("skin", skin_key)
+        )
 
     def available_skin_labels(self):
         return {key: self.skins[key].get("label", key) for key in self.available_skin_keys()}
 
     def available_quote_packs(self):
-        return self.dialogue.available_packs()
+        packs = []
+        for pack in self.dialogue.available_packs():
+            if not self._is_unlocked("quote_pack", pack["key"]):
+                continue
+            item = dict(pack)
+            item["favorite"] = self._is_favorite("quote_pack", pack["key"])
+            packs.append(item)
+        return packs
 
     def available_toys(self):
-        return self.toy_manager.available_toys()
+        toys = []
+        for toy in self.toy_manager.available_toys():
+            if not self._is_unlocked("toy", toy["key"]):
+                continue
+            item = dict(toy)
+            item["favorite"] = self._is_favorite("toy", toy["key"])
+            toys.append(item)
+        return toys
+
+    def available_scenarios(self, include_locked=False):
+        scenarios = self.scenario_manager.available_scenarios(
+            unlock_manager=self.unlock_manager,
+            favorites=self.favorite_scenario_keys,
+        )
+        if include_locked:
+            return scenarios
+        return [scenario for scenario in scenarios if scenario.get("unlocked", True)]
+
+    def _movement_bounds(self):
+        bounds = self.window.work_area()
+        right = max(int(bounds.left), int(bounds.right) - int(CANVAS_W) - 4)
+        bottom = max(int(bounds.top), int(bounds.bottom) - int(CANVAS_H) - 8)
+        return DesktopBounds(
+            left=int(bounds.left),
+            top=int(bounds.top),
+            right=right,
+            bottom=bottom,
+        )
+
+    def available_seasonal_modes(self):
+        active = set(self._seasonal_context().get("active_keys", []))
+        if not active:
+            active = {self.seasonal_mode_override}
+        options = []
+        for option in self.seasonal_manager.available_modes():
+            item = dict(option)
+            item["active"] = option["key"] in active
+            if option["key"] == "auto" and self.seasonal_mode_override == "auto":
+                item["active"] = True
+            if option["key"] == "off" and self.seasonal_mode_override == "off":
+                item["active"] = True
+            options.append(item)
+        return options
+
+    def available_discoveries(self):
+        return self.unlock_manager.discovery_catalog()
 
     def quote_pack_enabled(self, pack_key):
+        if not self._is_unlocked("quote_pack", pack_key):
+            return False
         return self.dialogue.pack_enabled(pack_key)
 
     def _set_skin(self, skin_key):
-        if skin_key not in self.skins or skin_key == self.skin_key:
+        if skin_key not in self.skins or skin_key == self.skin_key or not self._is_unlocked("skin", skin_key):
             return
         self.skin_key = skin_key
         self._apply_skin_assets()
@@ -683,6 +1068,13 @@ class NPCJasonApp:
         self._schedule_settings_save()
         self._refresh_tray()
 
+    def _toggle_movement_enabled(self):
+        self.movement_enabled = not self.movement_enabled
+        if not self.movement_enabled:
+            self.movement.clear()
+        self._schedule_settings_save()
+        self._refresh_tray()
+
     def _toggle_rare_events_enabled(self):
         self.rare_events_enabled = not self.rare_events_enabled
         self._schedule_rare_events()
@@ -695,13 +1087,35 @@ class NPCJasonApp:
         self._schedule_settings_save()
         self._refresh_tray()
 
+    def _toggle_unlocks_enabled(self):
+        self.unlocks_enabled = not self.unlocks_enabled
+        self.unlock_manager.set_enabled(self.unlocks_enabled)
+        self._apply_dialogue_pack_states()
+        self._schedule_settings_save()
+        self._refresh_tray()
+
+    def _set_seasonal_mode(self, mode_key):
+        if not self.seasonal_manager.set_override(mode_key):
+            return False
+        self.seasonal_mode_override = self.seasonal_manager.override
+        seasonal = self._seasonal_context()
+        if self.seasonal_mode_override not in {"auto", "off"}:
+            self._maybe_shift_skin_for_context(
+                preferred_tags=seasonal.get("preferred_skin_tags", []),
+                reason=f"season:{self.seasonal_mode_override}",
+                force=False,
+            )
+        self._schedule_settings_save()
+        self._refresh_tray()
+        return True
+
     def _toggle_quote_pack(self, pack_key):
         if not pack_key:
             return
         self.set_quote_pack_enabled(pack_key, not self.dialogue.pack_enabled(pack_key))
 
     def set_quote_pack_enabled(self, pack_key, enabled):
-        if not pack_key:
+        if not pack_key or not self._is_unlocked("quote_pack", pack_key):
             return False
         if not self.dialogue.set_pack_enabled(pack_key, enabled):
             return False
@@ -713,11 +1127,15 @@ class NPCJasonApp:
     def _trigger_toy_from_menu(self, toy_key):
         self._trigger_toy(toy_key, reveal_if_hidden=True, show_saying=True, source="toy-manual")
 
+    def _trigger_scenario_from_menu(self, scenario_key):
+        self._start_scenario(scenario_key, reveal_if_hidden=True, source="scenario-manual")
+
     def apply_settings(
         self,
         skin_key,
         sound_enabled,
         sound_volume,
+        sound_categories,
         auto_start_enabled,
         auto_update_enabled,
         event_reactions_enabled,
@@ -731,11 +1149,19 @@ class NPCJasonApp:
         auto_antics_dance_chance,
         rare_events_enabled,
         chaos_mode,
+        movement_enabled,
+        unlocks_enabled,
+        seasonal_mode_override,
         pet_name,
         reaction_toggles,
+        favorite_skins,
+        favorite_toys,
+        favorite_scenarios,
+        favorite_quote_packs,
     ):
         self.sound_enabled = bool(sound_enabled)
         self.sound_volume = clamp(int(sound_volume), 0, 100)
+        self.sound_categories = dict(sound_categories or self.sound_categories)
         self.auto_update_enabled = bool(auto_update_enabled)
         self.event_reactions_enabled = bool(event_reactions_enabled)
         self.quiet_hours_enabled = bool(quiet_hours_enabled)
@@ -748,11 +1174,24 @@ class NPCJasonApp:
         self.auto_antics_dance_chance = clamp(int(auto_antics_dance_chance), 0, 100)
         self.rare_events_enabled = bool(rare_events_enabled)
         self.chaos_mode = bool(chaos_mode)
+        self.movement_enabled = bool(movement_enabled)
+        self.unlocks_enabled = bool(unlocks_enabled)
+        self.seasonal_mode_override = str(seasonal_mode_override or "auto").strip() or "auto"
         self.pet_name = str(pet_name or self.pet_name)
         self.reaction_toggles = dict(default_settings()["global"]["reactions"])
         self.reaction_toggles.update(reaction_toggles)
+        self.favorite_skin_keys = self._dedupe(favorite_skins)
+        self.favorite_toy_keys = self._dedupe(favorite_toys)
+        self.favorite_scenario_keys = self._dedupe(favorite_scenarios)
+        self.favorite_quote_pack_keys = self._dedupe(favorite_quote_packs)
         self.sound_manager.set_enabled(self.sound_enabled)
         self.sound_manager.set_volume(self.sound_volume)
+        self.sound_manager.set_categories(self.sound_categories)
+        self.unlock_manager.set_enabled(self.unlocks_enabled)
+        self.seasonal_manager.set_override(self.seasonal_mode_override)
+        self.seasonal_mode_override = self.seasonal_manager.override
+        if not self.movement_enabled:
+            self.movement.clear()
         try:
             self.startup_manager.set_enabled(auto_start_enabled)
         except OSError:
@@ -761,6 +1200,7 @@ class NPCJasonApp:
         self._set_skin(skin_key)
         self._schedule_auto_antics()
         self._schedule_rare_events()
+        self._apply_dialogue_pack_states()
         self._refresh_suppression_state()
         if self.auto_update_enabled:
             self.scheduler.schedule(
@@ -778,6 +1218,32 @@ class NPCJasonApp:
 
     def preview_sound(self, volume, enabled):
         SoundManager.preview_effect("speech", enabled=enabled, volume=volume, logger=self.logger)
+
+    def _scenario_pick_context(self):
+        seasonal = self._seasonal_context()
+        preferred_categories = self._dedupe(self.skin_quote_affinity.get("categories", []))
+        preferred_categories.extend(
+            category
+            for category in self.personality.preferred_categories()
+            if category not in preferred_categories
+        )
+        return {
+            "skin_tags": list(self.skin_tags) + list(seasonal.get("preferred_skin_tags", [])),
+            "preferred_categories": preferred_categories,
+            "favorite_scenarios": list(self.favorite_scenario_keys),
+            "seasonal_modes": list(seasonal.get("active_keys", [])),
+            "personality_state": self.personality.current_state(),
+            "chaos_mode": self.chaos_mode,
+        }
+
+    def _trigger_random_scenario(self, source="scenario-auto", reveal_if_hidden=False):
+        definition = self.scenario_manager.pick_scenario(
+            context=self._scenario_pick_context(),
+            unlock_manager=self.unlock_manager,
+        )
+        if definition is None:
+            return False
+        return self._start_scenario(definition.key, reveal_if_hidden=reveal_if_hidden, source=source)
 
     def _random_auto_antics_delay(self):
         minimum = max(1, min(self.auto_antics_min_minutes, self.auto_antics_max_minutes))
@@ -816,6 +1282,9 @@ class NPCJasonApp:
         if self.is_quitting:
             return None
         if self.auto_antics_enabled and self._automatic_actions_allowed() and self._can_speak(14):
+            if not self.scenario_manager.active_scenario_key() and random.randint(1, 100) <= (28 if self.chaos_mode else 18):
+                if self._trigger_random_scenario(source="auto-antics"):
+                    return self._random_auto_antics_delay()
             if self.chaos_mode and random.randint(1, 100) <= 22:
                 if not self._trigger_random_toy(source="auto-antics"):
                     self._show_saying(source="auto-antics")
@@ -834,10 +1303,13 @@ class NPCJasonApp:
             or not self._can_speak(18)
         ):
             return self._random_rare_event_delay()
+        if not self.scenario_manager.active_scenario_key() and random.randint(1, 100) <= (62 if self.chaos_mode else 42):
+            if self._trigger_random_scenario(source="rare-scenario"):
+                return self._random_rare_event_delay()
         event = self.rare_event_manager.pick_event(
             {
                 "skin_tags": self.skin_tags,
-                "preferred_categories": self.skin_quote_affinity.get("categories", []),
+                "preferred_categories": self.skin_quote_affinity.get("categories", []) + self.personality.preferred_categories(),
                 "chaos_mode": self.chaos_mode,
             }
         )
@@ -856,6 +1328,8 @@ class NPCJasonApp:
         weighted = []
         preferred_categories = set(self.skin_quote_affinity.get("categories", []))
         skin_tags = set(self.skin_tags)
+        personality_categories = set(self.personality.preferred_categories())
+        seasonal_tags = set(self._seasonal_context().get("preferred_skin_tags", []))
         for toy in self.available_toys():
             if toy["cooldown_ms"] > 0 or toy["active"]:
                 continue
@@ -864,6 +1338,12 @@ class NPCJasonApp:
                 weight += 3
             if preferred_categories & set(toy["tags"]):
                 weight += 2
+            if personality_categories & set(toy["tags"]):
+                weight += 2
+            if seasonal_tags & set(toy["tags"]):
+                weight += 1
+            if toy.get("favorite"):
+                weight += 4
             weighted.append((toy["key"], weight))
         if not weighted:
             return None
@@ -915,7 +1395,16 @@ class NPCJasonApp:
             return False
         if toy_key == "tricycle":
             self._ride_origin_position = (self.window_x, self.window_y)
-        self._play_effect(result.sound_effect)
+        self._record_discovery_progress("toy_uses", 1, schedule_save=False)
+        toy_state_map = {
+            "tricycle": "celebrating",
+            "rubber-duck": "curious",
+            "homelab-cart": "busy",
+            "stress-ball": "annoyed",
+        }
+        if toy_key in toy_state_map:
+            self._set_personality_state(toy_state_map[toy_key], reason=f"toy:{toy_key}", duration_ms=5200)
+        self._play_effect(result.sound_effect, category="toy", throttle_ms=2600, throttle_key=f"toy:{toy_key}")
         self._refresh_tray()
         if show_saying and self._can_speak(2):
             self._show_saying(
@@ -939,13 +1428,171 @@ class NPCJasonApp:
             self._apply_window_position(0)
             self._ride_origin_position = None
         if result.finished_toy:
+            if result.finished_toy == "tricycle":
+                self._set_personality_state("smug", reason="toy-finished:tricycle", duration_ms=5000)
             self._refresh_tray()
         return result.next_delay_ms
 
+    def _personality_runtime_context(self):
+        seasonal = self._seasonal_context()
+        return {
+            "mood": self.mood,
+            "chaos_mode": self.chaos_mode,
+            "active_toy": self.toy_manager.active_toy_key() or "",
+            "recent_scenarios": list(self.scenario_manager.recent_history()),
+            "seasonal_contexts": seasonal.get("contexts", []),
+            "active_scenario": self.scenario_manager.active_scenario_key(),
+        }
+
+    def _personality_tick(self):
+        if self.is_quitting:
+            return None
+        if self.scenario_manager.active_scenario_key():
+            return self._random_delay(PERSONALITY_TICK_RANGE_MS)
+        changed = self.personality.tick(context=self._personality_runtime_context())
+        if changed:
+            self._record_discovery_progress("state_changes", 1, schedule_save=False)
+            if changed == "curious":
+                self._record_discovery_progress("curious_beats", 1, schedule_save=False)
+            if changed == "confused":
+                self._record_discovery_progress("confused_beats", 1, schedule_save=False)
+            self._play_state_sound(changed)
+            self._schedule_settings_save()
+            self._refresh_tray()
+        self._flush_discovery_notifications(reveal_if_hidden=False)
+        return self._random_delay(PERSONALITY_TICK_RANGE_MS)
+
+    def _movement_tick(self):
+        if self.is_quitting:
+            return None
+        snapshot = self.runtime_state.snapshot()
+        if (
+            not self.movement_enabled
+            or not snapshot.automatic_actions_allowed
+            or self.dragging
+            or self.toy_manager.active_toy_key()
+        ):
+            return MOVEMENT_TICK_MS
+        result = self.movement.tick(
+            self.window_x,
+            self.window_y,
+            self._movement_bounds(),
+            style=self.personality.movement_style(),
+        )
+        if result.moved:
+            self.window_x, self.window_y = self._clamp_window_position(result.x, result.y)
+            self._apply_window_position(0)
+        return result.next_delay_ms
+
+    def _start_scenario(self, scenario_key, reveal_if_hidden=False, source="scenario"):
+        if self.is_quitting or not scenario_key:
+            return False
+        if self._root_is_hidden():
+            if reveal_if_hidden:
+                self.window.show()
+                self.runtime_state.set_visibility(False)
+            else:
+                return False
+        if not self.scenario_manager.start(scenario_key, unlock_manager=self.unlock_manager):
+            if reveal_if_hidden:
+                for option in self.available_scenarios():
+                    if option["key"] == scenario_key and option["cooldown_ms"] > 0:
+                        seconds = max(1, int(option["cooldown_ms"] / 1000))
+                        self._show_text(f"{option['label']} is cooling down.\nTry again in {seconds}s.")
+                        break
+            return False
+        definition = self.scenario_manager.definition(scenario_key)
+        if definition and source != "scenario-manual":
+            self._maybe_shift_skin_for_context(
+                preferred_tags=definition.preferred_skin_tags,
+                reason=f"scenario:{scenario_key}",
+                force=False,
+            )
+        self.last_scenario_key = scenario_key
+        self._record_discovery_progress("scenario_runs", 1, schedule_save=False)
+        self._play_scenario_sound(scenario_key)
+        self._schedule_settings_save()
+        self._refresh_tray()
+        self._scenario_tick()
+        return True
+
+    def _execute_scenario_step(self, step, scenario_key):
+        action = str(step.action or "").strip()
+        payload = dict(step.payload or {})
+        if action == "set_state":
+            return self._set_personality_state(
+                step.value,
+                reason=f"scenario:{scenario_key}",
+                duration_ms=payload.get("duration_ms"),
+                lock_ms=payload.get("lock_ms", 0),
+                play_sound=bool(payload.get("play_sound", True)),
+            )
+        if action == "movement":
+            if not self.movement_enabled:
+                return False
+            self.movement.set_scripted(
+                step.value or self.personality.movement_style(),
+                duration_ms=int(payload.get("duration_ms", 1800)),
+                focus=payload.get("focus", ""),
+            )
+            return True
+        if action == "toy":
+            return self._trigger_toy(
+                step.value,
+                reveal_if_hidden=False,
+                show_saying=bool(payload.get("show_saying", False)),
+                source=f"scenario:{scenario_key}",
+                extra_contexts=list(payload.get("contexts", [])) + ["scenario", scenario_key],
+                extra_categories=list(payload.get("categories", [])),
+            )
+        if action == "quote":
+            return self._show_saying(
+                reveal_if_hidden=False,
+                source=f"scenario:{scenario_key}",
+                extra_contexts=list(payload.get("contexts", [])) + ["scenario", scenario_key],
+                extra_categories=list(payload.get("categories", [])),
+                extra_packs=list(payload.get("packs", [])),
+            )
+        if action == "sound":
+            self._play_effect(
+                step.value,
+                category=payload.get("category", "scenario"),
+                throttle_ms=int(payload.get("throttle_ms", 7000)),
+                throttle_key=payload.get("throttle_key", f"scenario-step:{scenario_key}:{step.value}"),
+            )
+            return True
+        if action == "dance":
+            return self._trigger_dance(show_saying=bool(payload.get("show_saying", False)))
+        return False
+
+    def _scenario_tick(self):
+        if self.is_quitting:
+            return None
+        result = self.scenario_manager.tick()
+        if result.command:
+            active_key = self.scenario_manager.active_scenario_key() or self.last_scenario_key
+            self._execute_scenario_step(result.command, active_key)
+        if result.completed_scenario:
+            self.last_scenario_key = result.completed_scenario
+            self.recent_scenario_keys = self.scenario_manager.recent_history()
+            self._schedule_settings_save()
+            self._refresh_tray()
+        return SCENARIO_TICK_MS
+
+    def _continuity_tick(self):
+        if self.is_quitting:
+            return None
+        self._record_discovery_progress("runtime_minutes", 1, schedule_save=False)
+        self.recent_scenario_keys = self.scenario_manager.recent_history()
+        self._flush_discovery_notifications(reveal_if_hidden=False)
+        self._schedule_settings_save()
+        return CONTINUITY_TICK_MS
+
     def reload_dialogue(self):
-        self.dialogue.set_pack_states(self.quote_pack_states)
+        self._apply_dialogue_pack_states()
         self.dialogue.reload_if_needed(force=True)
         self._log_asset_warnings_if_changed()
+        self._refresh_tray()
         self.logger.info("Reloaded dialogue packs")
 
     def export_settings(self, path):
@@ -1002,14 +1649,14 @@ class NPCJasonApp:
             return None
 
         self.dialogue.reload_if_needed()
-        self.dialogue.set_pack_states(self.quote_pack_states)
+        self._apply_dialogue_pack_states()
         skin_bundle = load_skin_bundle()
         reloaded_skins = skin_bundle["definitions"]
         reloaded_errors = skin_bundle["errors"]
         if reloaded_skins != self.skins or reloaded_errors != self.skin_load_errors:
             self.skins = reloaded_skins
             self.skin_load_errors = reloaded_errors
-            if self.skin_key not in self.skins:
+            if self.skin_key not in self.skins or not self._is_unlocked("skin", self.skin_key):
                 self.skin_key = "jason"
             self._apply_skin_assets()
             if not self.animation.is_dancing:
@@ -1066,6 +1713,7 @@ class NPCJasonApp:
         started = self.animation.start_dance()
         if not started:
             return False
+        self._set_personality_state("celebrating", reason="dance", duration_ms=4800)
         self._play_interaction_sound()
         if show_saying:
             self._show_saying(source="interaction")
@@ -1363,8 +2011,13 @@ class NPCJasonApp:
         menu = self._new_context_menu(parent)
         selected_skin = tk.StringVar(value=self.skin_key)
         for skin_key, skin_data in sorted(self.skins.items()):
+            if skin_key not in self.available_skin_keys():
+                continue
+            label = skin_data.get("label", skin_key)
+            if self._is_favorite("skin", skin_key):
+                label = "★ " + label
             menu.add_radiobutton(
-                label=skin_data.get("label", skin_key),
+                label=label,
                 value=skin_key,
                 variable=selected_skin,
                 command=lambda chosen=skin_key: self._set_skin(chosen),
@@ -1378,7 +2031,8 @@ class NPCJasonApp:
             menu.add_command(label="No toys loaded", state="disabled")
             return menu
         for toy in toys:
-            label = toy["label"] if toy["cooldown_ms"] <= 0 else f"{toy['label']} ({max(1, toy['cooldown_ms'] // 1000)}s)"
+            base_label = ("★ " if toy.get("favorite") else "") + toy["label"]
+            label = base_label if toy["cooldown_ms"] <= 0 else f"{base_label} ({max(1, toy['cooldown_ms'] // 1000)}s)"
             menu.add_command(
                 label=label,
                 command=lambda chosen=toy["key"]: self._trigger_toy_from_menu(chosen),
@@ -1394,7 +2048,7 @@ class NPCJasonApp:
             return menu
         for pack in packs:
             menu.add_checkbutton(
-                label=pack["label"],
+                label=("★ " if pack.get("favorite") else "") + pack["label"],
                 onvalue=True,
                 offvalue=False,
                 variable=tk.BooleanVar(value=pack["enabled"]),
@@ -1402,12 +2056,49 @@ class NPCJasonApp:
             )
         return menu
 
+    def _build_scenario_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        scenarios = self.available_scenarios()
+        if not scenarios:
+            menu.add_command(label="No scenarios unlocked", state="disabled")
+            return menu
+        for scenario in scenarios:
+            if not scenario["unlocked"]:
+                continue
+            base_label = ("★ " if scenario.get("favorite") else "") + scenario["label"]
+            label = (
+                base_label
+                if scenario["cooldown_ms"] <= 0
+                else f"{base_label} ({max(1, scenario['cooldown_ms'] // 1000)}s)"
+            )
+            menu.add_command(
+                label=label,
+                command=lambda chosen=scenario["key"]: self._trigger_scenario_from_menu(chosen),
+                state="normal" if scenario["cooldown_ms"] <= 0 and not scenario["active"] else "disabled",
+            )
+        return menu
+
+    def _build_special_mode_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        selected = tk.StringVar(value=self.seasonal_mode_override)
+        for option in self.available_seasonal_modes():
+            menu.add_radiobutton(
+                label=option["label"],
+                value=option["key"],
+                variable=selected,
+                command=lambda chosen=option["key"]: self._set_seasonal_mode(chosen),
+            )
+        return menu
+
     def _on_right_click(self, event):
         menu = self._new_context_menu(self.root)
         menu.add_command(label=f"Mood: {MOODS[self.mood]['label']}", state="disabled")
+        menu.add_command(label=f"State: {self._personality_label()}", state="disabled")
         menu.add_command(label=f"Name: {self.pet_name}", state="disabled")
         if self._active_toy_label():
             menu.add_command(label=f"Toy: {self._active_toy_label()}", state="disabled")
+        elif self._active_scenario_label():
+            menu.add_command(label=f"Scenario: {self._active_scenario_label()}", state="disabled")
         menu.add_command(label="Trigger Quote", command=lambda: self._show_saying(True))
         menu.add_command(label="Dance!", command=lambda: self._trigger_dance(True))
         menu.add_command(label="Repeat Last Saying", command=self.repeat_last_saying)
@@ -1418,12 +2109,14 @@ class NPCJasonApp:
         menu.add_command(label="Settings", command=self._open_settings_window)
         menu.add_cascade(label="Choose Skin", menu=self._build_skin_menu(menu))
         menu.add_cascade(label="Toys", menu=self._build_toy_menu(menu))
+        menu.add_cascade(label="Scenarios", menu=self._build_scenario_menu(menu))
         menu.add_cascade(label="Quote Packs", menu=self._build_quote_pack_menu(menu))
+        menu.add_cascade(label="Special Mode", menu=self._build_special_mode_menu(menu))
         menu.add_checkbutton(
-            label="Sound Effects",
+            label="Mute Sounds",
             onvalue=True,
             offvalue=False,
-            variable=tk.BooleanVar(value=self.sound_enabled),
+            variable=tk.BooleanVar(value=not self.sound_enabled),
             command=self._toggle_sound_enabled,
         )
         menu.add_checkbutton(
@@ -1440,6 +2133,20 @@ class NPCJasonApp:
             variable=tk.BooleanVar(value=self.chaos_mode),
             command=self._toggle_chaos_mode,
         )
+        menu.add_checkbutton(
+            label="Autonomous Movement",
+            onvalue=True,
+            offvalue=False,
+            variable=tk.BooleanVar(value=self.movement_enabled),
+            command=self._toggle_movement_enabled,
+        )
+        menu.add_checkbutton(
+            label="Unlockable Discoveries",
+            onvalue=True,
+            offvalue=False,
+            variable=tk.BooleanVar(value=self.unlocks_enabled),
+            command=self._toggle_unlocks_enabled,
+        )
         menu.add_command(label="Dismiss All Friends", command=self.dismiss_all_friends)
         menu.add_command(label="Check for Updates", command=self.check_for_updates_manual)
         menu.add_command(label="Open Data Folder", command=self.open_data_folder)
@@ -1452,18 +2159,34 @@ class NPCJasonApp:
             menu.grab_release()
 
     def _tray_state(self):
+        if self.seasonal_mode_override == "auto":
+            seasonal_label = (
+                self.seasonal_manager.primary_mode().label
+                if self.seasonal_manager.primary_mode()
+                else "Auto"
+            )
+        elif self.seasonal_mode_override == "off":
+            seasonal_label = "Off"
+        else:
+            seasonal_label = self.seasonal_mode_override.replace("-", " ").title()
         return TrayState(
             pet_name=self.pet_name,
             mood_label=MOODS[self.mood]["label"],
+            personality_label=self._personality_label(),
             skin_key=self.skin_key,
             sound_enabled=self.sound_enabled,
             auto_start_enabled=self.startup_manager.is_enabled(),
             rare_events_enabled=self.rare_events_enabled,
             chaos_mode=self.chaos_mode,
+            movement_enabled=self.movement_enabled,
+            unlocks_enabled=self.unlocks_enabled,
             active_toy_label=self._active_toy_label(),
+            active_scenario_label=self._active_scenario_label(),
+            seasonal_mode_label=seasonal_label,
             skin_options=[
                 TraySkinOption(key=skin_key, label=skin_data.get("label", skin_key))
                 for skin_key, skin_data in sorted(self.skins.items())
+                if skin_key in self.available_skin_keys()
             ],
             toy_options=[
                 TrayToyOption(
@@ -1471,6 +2194,7 @@ class NPCJasonApp:
                     label=toy["label"],
                     cooldown_ms=toy["cooldown_ms"],
                     active=toy["active"],
+                    favorite=toy.get("favorite", False),
                 )
                 for toy in self.available_toys()
             ],
@@ -1479,8 +2203,28 @@ class NPCJasonApp:
                     key=pack["key"],
                     label=pack["label"],
                     enabled=pack["enabled"],
+                    favorite=pack.get("favorite", False),
                 )
                 for pack in self.available_quote_packs()
+            ],
+            scenario_options=[
+                TrayScenarioOption(
+                    key=scenario["key"],
+                    label=scenario["label"],
+                    cooldown_ms=scenario["cooldown_ms"],
+                    active=scenario["active"],
+                    unlocked=scenario["unlocked"],
+                    favorite=scenario.get("favorite", False),
+                )
+                for scenario in self.available_scenarios()
+            ],
+            seasonal_options=[
+                TraySeasonOption(
+                    key=option["key"],
+                    label=option["label"],
+                    active=option.get("active", False),
+                )
+                for option in self.available_seasonal_modes()
             ],
             pets=[
                 TrayPetOption(pet_id=pet_id, label=description)
@@ -1523,6 +2267,7 @@ class NPCJasonApp:
         return GlobalSettings(
             sound_enabled=self.sound_enabled,
             sound_volume=self.sound_volume,
+            sound_categories=dict(self.sound_categories),
             auto_update_enabled=self.auto_update_enabled,
             event_reactions_enabled=self.event_reactions_enabled,
             quiet_hours_enabled=self.quiet_hours_enabled,
@@ -1535,8 +2280,22 @@ class NPCJasonApp:
             auto_antics_dance_chance=self.auto_antics_dance_chance,
             rare_events_enabled=self.rare_events_enabled,
             chaos_mode=self.chaos_mode,
+            movement_enabled=self.movement_enabled,
+            unlocks_enabled=self.unlocks_enabled,
+            seasonal_mode_override=self.seasonal_mode_override,
+            last_active_season=self.last_active_season,
             reaction_toggles=dict(self.reaction_toggles),
             quote_pack_states=dict(self.quote_pack_states),
+            favorite_skins=list(self.favorite_skin_keys),
+            favorite_toys=list(self.favorite_toy_keys),
+            favorite_scenarios=list(self.favorite_scenario_keys),
+            favorite_quote_packs=list(self.favorite_quote_pack_keys),
+            unlocked_skins=self.unlock_manager.unlocked_snapshot()["skins"],
+            unlocked_toys=self.unlock_manager.unlocked_snapshot()["toys"],
+            unlocked_scenarios=self.unlock_manager.unlocked_snapshot()["scenarios"],
+            unlocked_quote_packs=self.unlock_manager.unlocked_snapshot()["quote_packs"],
+            discovery_stats=self.unlock_manager.stats(),
+            recent_scenarios=list(self.scenario_manager.recent_history()),
             favorite_templates=list(self.speech_history.favorites()),
             recent_sayings=list(self.speech_history.recent()),
         )
@@ -1548,6 +2307,8 @@ class NPCJasonApp:
             skin=self.skin_key,
             mood=self.mood,
             name=self.pet_name,
+            personality_state=self.personality.current_state(),
+            last_scenario=self.last_scenario_key,
         )
 
     def _save_settings(self):

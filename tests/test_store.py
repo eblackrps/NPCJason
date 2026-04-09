@@ -1,9 +1,8 @@
 from pathlib import Path
-import tempfile
 import unittest
 
 from npcjason_app.store import JsonStore
-from tests.helpers import FakeLogger
+from tests.helpers import FakeLogger, workspace_tempdir
 
 
 def default_payload():
@@ -12,7 +11,7 @@ def default_payload():
 
 class JsonStoreTests(unittest.TestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_dir = workspace_tempdir()
         self.store_path = Path(self.temp_dir.name) / "store.json"
         self.store = JsonStore(self.store_path, default_payload)
 

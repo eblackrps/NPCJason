@@ -25,6 +25,7 @@ env/
 .idea/
 *.sublime-project
 *.sublime-workspace
+.tmp-tests/
 
 # OS artifacts
 Thumbs.db

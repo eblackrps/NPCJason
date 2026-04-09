@@ -1,0 +1,62 @@
+{
+  "key": "what-do",
+  "label": "What Do Pack",
+  "description": "Short confused little menace lines for curious and baffled desktop moments.",
+  "weight": 2,
+  "enabled": true,
+  "categories": [
+    "what-do",
+    "confused"
+  ],
+  "affinity": {
+    "contexts": [
+      "confused",
+      "curious",
+      "personality-confused",
+      "personality-curious",
+      "what-do"
+    ]
+  },
+  "quotes": [
+    {
+      "text": "what do",
+      "categories": ["what-do"]
+    },
+    {
+      "text": "what do.\nthis seems like a whole thing.",
+      "categories": ["what-do", "office"]
+    },
+    {
+      "text": "hmm.\nwhat do.",
+      "categories": ["what-do"]
+    },
+    {
+      "text": "what dis.\nwhy desktop like this.",
+      "categories": ["what-do", "office"]
+    },
+    {
+      "text": "router-shaped problem.\nwhat do.",
+      "categories": ["what-do", "network"]
+    },
+    {
+      "text": "homelab vibes are off.\nwhat do.",
+      "categories": ["what-do", "homelab"]
+    },
+    {
+      "text": "I have inspected the issue.\nI now have more issue.",
+      "categories": ["what-do", "responsible"]
+    },
+    {
+      "text": "the icon situation is developing.\nwhat do.",
+      "categories": ["what-do", "office"]
+    },
+    {
+      "text": "tiny incident detected.\nwhat do.",
+      "categories": ["what-do"]
+    },
+    {
+      "text": "I would like to report a confusing amount of whatever this is.",
+      "categories": ["what-do", "responsible"]
+    }
+  ]
+}

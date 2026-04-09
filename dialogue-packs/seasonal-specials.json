@@ -1,0 +1,54 @@
+{
+  "key": "seasonal-specials",
+  "label": "Seasonal Specials",
+  "description": "Calendar-based weirdness for holidays, patch days, and cursed weekdays.",
+  "weight": 1,
+  "enabled": true,
+  "categories": [
+    "seasonal"
+  ],
+  "quotes": [
+    {
+      "text": "If anything weird happens today,\nI will be acting surprised professionally.",
+      "categories": ["seasonal", "office"],
+      "affinity": {
+        "contexts": ["april-fools"]
+      }
+    },
+    {
+      "text": "The office is feeling a little haunted.\nCould be AD again.",
+      "categories": ["seasonal", "office"],
+      "affinity": {
+        "contexts": ["halloween"]
+      }
+    },
+    {
+      "text": "Cold outside.\nFans still screaming inside.",
+      "categories": ["seasonal", "homelab"],
+      "affinity": {
+        "contexts": ["winter", "holiday"]
+      }
+    },
+    {
+      "text": "Patch day.\nNo sudden movements.",
+      "categories": ["seasonal", "responsible"],
+      "affinity": {
+        "contexts": ["patch-day"]
+      }
+    },
+    {
+      "text": "Weekend objective:\nturn one small homelab idea into six medium mistakes.",
+      "categories": ["seasonal", "homelab"],
+      "affinity": {
+        "contexts": ["homelab-weekend"]
+      }
+    },
+    {
+      "text": "I am technically online.\nLet's not stress the definition.",
+      "categories": ["seasonal", "office"],
+      "affinity": {
+        "contexts": ["monday-morning"]
+      }
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 import unittest
 from pathlib import Path
-import tempfile
 
 from npcjason_app.dialogue import DialogueLibrary, merge_pools, parse_dialogue_source, parse_dialogue_text, render_template
+from tests.helpers import workspace_tempdir
 
 
 class DialogueTests(unittest.TestCase):
@@ -60,7 +60,7 @@ class DialogueTests(unittest.TestCase):
         self.assertTrue(any("unknown template token" in warning for warning in warnings))
 
     def test_dialogue_library_supports_json_packs_and_repeat_suppression(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with workspace_tempdir() as temp_dir:
             packs_dir = Path(temp_dir)
             (packs_dir / "pack.json").write_text(
                 """
@@ -92,7 +92,7 @@ class DialogueTests(unittest.TestCase):
             self.assertEqual("focus-pack", choice.pack_key)
 
     def test_dialogue_library_can_disable_pack(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with workspace_tempdir() as temp_dir:
             packs_dir = Path(temp_dir)
             (packs_dir / "pack.json").write_text(
                 """
@@ -116,7 +116,7 @@ class DialogueTests(unittest.TestCase):
             self.assertFalse(packs["jason-quotes"]["enabled"])
 
     def test_dialogue_library_can_enable_default_disabled_pack(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with workspace_tempdir() as temp_dir:
             packs_dir = Path(temp_dir)
             (packs_dir / "pack.json").write_text(
                 """

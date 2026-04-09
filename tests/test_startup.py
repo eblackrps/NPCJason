@@ -1,8 +1,8 @@
 from pathlib import Path
-import tempfile
 import unittest
 
 from npcjason_app.startup import StartupManager, build_startup_script
+from tests.helpers import workspace_tempdir
 
 
 class StartupTests(unittest.TestCase):
@@ -12,7 +12,7 @@ class StartupTests(unittest.TestCase):
         self.assertIn("start", script.lower())
 
     def test_startup_manager_enable_disable_round_trip(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
+        with workspace_tempdir() as temp_dir:
             script_path = Path(temp_dir) / "NPCJason.cmd"
             manager = StartupManager(script_path=script_path)
 

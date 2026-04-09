@@ -28,8 +28,29 @@ SOUND_PATTERNS = {
     "homelab_interaction": [(0.04, 349), (0.04, 440), (0.04, 523)],
     "network_interaction": [(0.03, 1047), (0.03, 1319), (0.03, 1568)],
     "responsible_interaction": [(0.04, 523), (0.04, 659), (0.05, 698)],
+    "astronaut_interaction": [(0.03, 784), (0.05, 988), (0.04, 1175)],
+    "state_curious": [(0.03, 698), (0.03, 784)],
+    "state_smug": [(0.03, 523), (0.04, 659)],
+    "state_busy": [(0.02, 988), (0.02, 784), (0.03, 1047)],
+    "state_annoyed": [(0.02, 440), (0.02, 415), (0.03, 392)],
+    "state_celebrating": [(0.03, 880), (0.03, 988), (0.04, 1319)],
+    "state_confused": [(0.03, 622), (0.03, 554)],
+    "state_sneaky": [(0.03, 523), (0.03, 587)],
+    "state_exhausted": [(0.05, 349), (0.05, 294)],
+    "scenario_busy_it_morning": [(0.02, 784), (0.02, 988), (0.03, 784)],
+    "scenario_homelab_troubleshooting": [(0.04, 330), (0.04, 392), (0.04, 330)],
+    "scenario_network_victory_lap": [(0.03, 784), (0.03, 1047), (0.04, 1319)],
+    "scenario_responsible_adult_moment": [(0.03, 523), (0.03, 659), (0.03, 523)],
+    "scenario_office_chaos": [(0.02, 466), (0.02, 415), (0.02, 466), (0.03, 523)],
+    "scenario_orbital_desk_patrol": [(0.03, 784), (0.05, 932), (0.05, 1175)],
 }
 _STOP_SENTINEL = object()
+DEFAULT_SOUND_CATEGORIES = {
+    "speech": True,
+    "toy": True,
+    "state": True,
+    "scenario": True,
+}
 
 
 def _effect_filename(effect_name, volume):
@@ -67,10 +88,12 @@ class SoundManager:
         self.enabled = bool(enabled)
         self.volume = int(volume)
         self.logger = logger
+        self.category_states = dict(DEFAULT_SOUND_CATEGORIES)
         self._asset_lock = threading.Lock()
         self._play_queue = queue.Queue(maxsize=8)
         self._worker = None
         self._stopped = False
+        self._last_played_at_ms = {}
         ensure_app_dirs()
 
     def set_enabled(self, enabled):
@@ -78,6 +101,13 @@ class SoundManager:
 
     def set_volume(self, volume):
         self.volume = max(0, min(100, int(volume)))
+
+    def set_categories(self, category_states):
+        states = category_states if isinstance(category_states, dict) else {}
+        self.category_states = {
+            key: bool(states.get(key, default))
+            for key, default in DEFAULT_SOUND_CATEGORIES.items()
+        }
 
     def _ensure_asset(self, effect_name):
         effect_path = _effect_filename(effect_name, self.volume)
@@ -88,9 +118,18 @@ class SoundManager:
                 _build_wave_file(effect_path, SOUND_PATTERNS[effect_name], self.volume)
         return effect_path
 
-    def play(self, effect_name):
+    def play(self, effect_name, category="toy", throttle_ms=0, throttle_key=None):
         if self._stopped or not self.enabled or not HAS_WINSOUND or effect_name not in SOUND_PATTERNS:
             return
+        category = str(category or "toy").strip() or "toy"
+        if category in self.category_states and not self.category_states.get(category, True):
+            return
+        throttle_key = str(throttle_key or effect_name).strip() or str(effect_name)
+        if int(throttle_ms or 0) > 0:
+            now_ms = int(time.monotonic() * 1000)
+            if now_ms - int(self._last_played_at_ms.get(throttle_key, 0)) < int(throttle_ms):
+                return
+            self._last_played_at_ms[throttle_key] = now_ms
         self._ensure_worker_started()
         if self._play_queue.full():
             try:

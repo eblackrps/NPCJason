@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 import math
 import time
 
-from .toy_window import ToyWindow
-
 
 TOY_PIXEL_SCALE = 4
 
@@ -235,6 +233,10 @@ class BaseToyBehavior:
         self.started_at_ms = None
         self.width = max(len(row) for row in next(iter(definition.frames.values())))
         self.height = len(next(iter(definition.frames.values())))
+        try:
+            from .toy_window import ToyWindow
+        except Exception as exc:
+            raise RuntimeError("toy-window-unavailable") from exc
         self.window = ToyWindow(
             root,
             self.width * TOY_PIXEL_SCALE,
@@ -476,15 +478,19 @@ class ToyManager:
         behavior_type = BEHAVIOR_TYPES.get(definition.behavior)
         if behavior_type is None:
             return ToyTriggerResult(started=False, reason="unsupported-behavior", toy_key=toy_key)
-        self._active = behavior_type(
-            definition,
-            self.root,
-            pet_x,
-            pet_y,
-            work_area,
-            skin_offsets=skin_offsets,
-            logger=self.logger,
-        )
+        try:
+            self._active = behavior_type(
+                definition,
+                self.root,
+                pet_x,
+                pet_y,
+                work_area,
+                skin_offsets=skin_offsets,
+                logger=self.logger,
+            )
+        except RuntimeError as exc:
+            self._log("warning", f"toy: could not start {toy_key} ({exc})")
+            return ToyTriggerResult(started=False, reason="ui-unavailable", toy_key=toy_key)
         return ToyTriggerResult(
             started=True,
             toy_key=definition.key,
@@ -519,3 +525,10 @@ class ToyManager:
 
     def _now_ms(self):
         return int(self.clock() * 1000)
+
+    def _log(self, level, message):
+        if not self.logger:
+            return
+        log_method = getattr(self.logger, level, None)
+        if callable(log_method):
+            log_method(message)

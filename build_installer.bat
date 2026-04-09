@@ -1,11 +1,21 @@
 @echo off
 echo === NPCJason Full Build (EXE + Installer) ===
 echo.
-for /f %%i in ('python -c "from npcjason_app.version import APP_VERSION; print(APP_VERSION)"') do set APP_VERSION=%%i
+
+set "PYTHON_CMD=python"
+py -3.13 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3.13"
+if /I "%PYTHON_CMD%"=="python" (
+    py -3 -c "import sys" >nul 2>nul && set "PYTHON_CMD=py -3"
+)
+
+echo Using Python command: %PYTHON_CMD%
+echo.
+
+for /f %%i in ('%PYTHON_CMD% -c "from npcjason_app.version import APP_VERSION; print(APP_VERSION)"') do set APP_VERSION=%%i
 
 echo [1/7] Installing dependencies...
-python -m pip install --upgrade pip --quiet
-python -m pip install ".[build]" --quiet
+%PYTHON_CMD% -m pip install --upgrade pip --quiet
+%PYTHON_CMD% -m pip install ".[build]" --quiet
 if errorlevel 1 (
     echo ERROR: pip install failed. Make sure Python is on PATH.
     pause
@@ -13,7 +23,7 @@ if errorlevel 1 (
 )
 
 echo [2/7] Validating installed dependencies...
-python -m pip check
+%PYTHON_CMD% -m pip check
 if errorlevel 1 (
     echo ERROR: pip dependency check failed.
     pause
@@ -21,7 +31,7 @@ if errorlevel 1 (
 )
 
 echo [3/7] Running tests...
-python -m unittest discover -s tests -v
+%PYTHON_CMD% -m unittest discover -s tests -v
 if errorlevel 1 (
     echo ERROR: Tests failed.
     pause
@@ -29,7 +39,7 @@ if errorlevel 1 (
 )
 
 echo [4/7] Compiling source files...
-python -m compileall npcjason_app tests npcjason.py
+%PYTHON_CMD% -m compileall npcjason_app tests npcjason.py
 if errorlevel 1 (
     echo ERROR: Source compilation check failed.
     pause
@@ -37,7 +47,7 @@ if errorlevel 1 (
 )
 
 echo [5/7] Generating icon...
-python generate_icon.py
+%PYTHON_CMD% generate_icon.py
 if errorlevel 1 (
     echo ERROR: Icon generation failed.
     pause
@@ -45,7 +55,7 @@ if errorlevel 1 (
 )
 
 echo [6/7] Building EXE with PyInstaller...
-python -m PyInstaller npcjason.spec --clean --noconfirm
+%PYTHON_CMD% -m PyInstaller npcjason.spec --clean --noconfirm
 if errorlevel 1 (
     echo ERROR: PyInstaller build failed.
     pause
@@ -55,11 +65,11 @@ if errorlevel 1 (
 echo [7/7] Building installer with Inno Setup...
 set ISCC=
 if exist "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" (
-    set ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+    set "ISCC=C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ) else if exist "C:\Program Files\Inno Setup 6\ISCC.exe" (
-    set ISCC=C:\Program Files\Inno Setup 6\ISCC.exe
- ) else if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" (
-    set ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe
+    set "ISCC=C:\Program Files\Inno Setup 6\ISCC.exe"
+) else if exist "%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe" (
+    set "ISCC=%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe"
 )
 
 if not defined ISCC (

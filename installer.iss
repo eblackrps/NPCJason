@@ -3,7 +3,7 @@
 ; Or open in the Inno Setup IDE and press Ctrl+F9
 
 #define MyAppName "NPCJason"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.5.0"
 #define MyAppPublisher "NPCJason"
 #define MyAppExeName "NPCJason.exe"
 

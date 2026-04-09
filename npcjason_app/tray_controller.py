@@ -42,6 +42,7 @@ class TrayToyOption:
     label: str
     cooldown_ms: int = 0
     active: bool = False
+    favorite: bool = False
 
 
 @dataclass
@@ -49,21 +50,46 @@ class TrayQuotePackOption:
     key: str
     label: str
     enabled: bool = True
+    favorite: bool = False
+
+
+@dataclass
+class TrayScenarioOption:
+    key: str
+    label: str
+    cooldown_ms: int = 0
+    active: bool = False
+    unlocked: bool = True
+    favorite: bool = False
+
+
+@dataclass
+class TraySeasonOption:
+    key: str
+    label: str
+    active: bool = False
 
 
 @dataclass
 class TrayState:
     pet_name: str
     mood_label: str
+    personality_label: str
     skin_key: str
     sound_enabled: bool
     auto_start_enabled: bool
     rare_events_enabled: bool = True
     chaos_mode: bool = False
+    movement_enabled: bool = True
+    unlocks_enabled: bool = True
     active_toy_label: str = ""
+    active_scenario_label: str = ""
+    seasonal_mode_label: str = "Auto"
     skin_options: List[TraySkinOption] = field(default_factory=list)
     toy_options: List[TrayToyOption] = field(default_factory=list)
     quote_packs: List[TrayQuotePackOption] = field(default_factory=list)
+    scenario_options: List[TrayScenarioOption] = field(default_factory=list)
+    seasonal_options: List[TraySeasonOption] = field(default_factory=list)
     pets: List[TrayPetOption] = field(default_factory=list)
     tray_colors: dict = field(default_factory=dict)
 
@@ -84,9 +110,13 @@ class TrayActions:
     toggle_sound: Callable
     toggle_rare_events: Callable
     toggle_chaos_mode: Callable
+    toggle_movement: Callable
+    toggle_unlocks: Callable
     trigger_toy: Callable
     trigger_quote: Callable
     toggle_quote_pack: Callable
+    trigger_scenario: Callable
+    set_seasonal_mode: Callable
     bring_back: Callable
     check_updates: Callable
     open_releases: Callable
@@ -96,9 +126,11 @@ class TrayActions:
 
 
 def build_tray_snapshot(state):
-    title = f"{state.pet_name} | {state.mood_label}"
+    title = f"{state.pet_name} | {state.mood_label} | {state.personality_label}"
     if state.active_toy_label:
         title += f" | {state.active_toy_label}"
+    elif state.active_scenario_label:
+        title += f" | {state.active_scenario_label}"
     return {
         "title": title,
         "skin_labels": [skin.label for skin in state.skin_options],
@@ -107,8 +139,12 @@ def build_tray_snapshot(state):
         "auto_start_enabled": bool(state.auto_start_enabled),
         "rare_events_enabled": bool(state.rare_events_enabled),
         "chaos_mode": bool(state.chaos_mode),
+        "movement_enabled": bool(state.movement_enabled),
+        "unlocks_enabled": bool(state.unlocks_enabled),
         "toy_labels": [toy.label for toy in state.toy_options],
         "quote_packs": [pack.label for pack in state.quote_packs],
+        "scenario_labels": [scenario.label for scenario in state.scenario_options],
+        "seasonal_mode": state.seasonal_mode_label,
         "pets": [pet.label for pet in state.pets],
     }
 
@@ -221,7 +257,7 @@ class TrayController:
         ]
         quote_pack_items = [
             item(
-                pack.label,
+                ("★ " if pack.favorite else "") + pack.label,
                 self._dispatch(self.actions.toggle_quote_pack, pack.key),
                 checked=lambda menu_item, chosen=pack.key: any(
                     option.key == chosen and option.enabled
@@ -230,14 +266,53 @@ class TrayController:
             )
             for pack in state.quote_packs
         ]
+        scenario_items = [
+            item(
+                ("★ " if scenario.favorite else "") + (
+                    scenario.label
+                    if scenario.cooldown_ms <= 0
+                    else f"{scenario.label} ({max(1, scenario.cooldown_ms // 1000)}s)"
+                ),
+                self._dispatch(self.actions.trigger_scenario, scenario.key),
+                enabled=lambda menu_item, chosen=scenario.key: any(
+                    option.key == chosen and option.cooldown_ms <= 0 and option.unlocked and not option.active
+                    for option in self.state_provider().scenario_options
+                ),
+            )
+            for scenario in state.scenario_options
+        ]
+        seasonal_items = [
+            item(
+                option.label,
+                self._dispatch(self.actions.set_seasonal_mode, option.key),
+                checked=lambda menu_item, chosen=option.key: any(
+                    current.key == chosen and current.active
+                    for current in self.state_provider().seasonal_options
+                ),
+                radio=True,
+            )
+            for option in state.seasonal_options
+        ]
         return pystray.Menu(
             item("Show/Hide", self._dispatch(self.actions.toggle_visibility), default=True),
             item(lambda menu_item: snapshot["title"], lambda icon, menu_item: None, enabled=False),
             item("Choose Skin", pystray.Menu(*skin_items)),
             item("Toys", pystray.Menu(*toy_items) if toy_items else pystray.Menu(item("No toys", lambda icon, menu_item: None, enabled=False))),
+            item(
+                "Scenarios",
+                pystray.Menu(*scenario_items)
+                if scenario_items
+                else pystray.Menu(item("No scenarios", lambda icon, menu_item: None, enabled=False)),
+            ),
             item("Dance!", self._dispatch(self.actions.dance)),
             item("Trigger Quote", self._dispatch(self.actions.trigger_quote)),
             item("Quote Packs", pystray.Menu(*quote_pack_items) if quote_pack_items else pystray.Menu(item("No packs", lambda icon, menu_item: None, enabled=False))),
+            item(
+                "Special Mode",
+                pystray.Menu(*seasonal_items)
+                if seasonal_items
+                else pystray.Menu(item("Auto", lambda icon, menu_item: None, enabled=False)),
+            ),
             item("Repeat Last Saying", self._dispatch(self.actions.repeat_last)),
             item("Favorite Last Saying", self._dispatch(self.actions.favorite_last)),
             item("Random Favorite", self._dispatch(self.actions.random_favorite)),
@@ -245,9 +320,11 @@ class TrayController:
             item("Pets", pets_menu),
             item("Settings", self._dispatch(self.actions.open_settings)),
             item("Start With Windows", self._dispatch(self.actions.toggle_auto_start), checked=lambda menu_item: self.state_provider().auto_start_enabled),
-            item("Sound Effects", self._dispatch(self.actions.toggle_sound), checked=lambda menu_item: self.state_provider().sound_enabled),
+            item("Mute Sounds", self._dispatch(self.actions.toggle_sound), checked=lambda menu_item: not self.state_provider().sound_enabled),
             item("Rare Events", self._dispatch(self.actions.toggle_rare_events), checked=lambda menu_item: self.state_provider().rare_events_enabled),
             item("Chaos Mode", self._dispatch(self.actions.toggle_chaos_mode), checked=lambda menu_item: self.state_provider().chaos_mode),
+            item("Autonomous Movement", self._dispatch(self.actions.toggle_movement), checked=lambda menu_item: self.state_provider().movement_enabled),
+            item("Unlockable Discoveries", self._dispatch(self.actions.toggle_unlocks), checked=lambda menu_item: self.state_provider().unlocks_enabled),
             item("Bring Back On Screen", self._dispatch(self.actions.bring_back)),
             item("Check for Updates", self._dispatch(self.actions.check_updates)),
             item("Open Releases Page", self._dispatch(self.actions.open_releases)),

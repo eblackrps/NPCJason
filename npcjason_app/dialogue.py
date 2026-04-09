@@ -116,6 +116,8 @@ ALLOWED_TEMPLATE_TOKENS = {
     "other_pet_name",
     "mood",
     "mood_key",
+    "personality",
+    "personality_key",
     "time",
     "date",
     "active_window",

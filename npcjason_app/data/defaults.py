@@ -1,4 +1,4 @@
-SETTINGS_SCHEMA_VERSION = 4
+SETTINGS_SCHEMA_VERSION = 5
 SHARED_STATE_SCHEMA_VERSION = 1
 
 MOODS = {
@@ -14,6 +14,12 @@ def default_settings():
         "global": {
             "sound_enabled": True,
             "sound_volume": 70,
+            "sound_categories": {
+                "speech": True,
+                "toy": True,
+                "state": True,
+                "scenario": True,
+            },
             "default_skin": "jason",
             "auto_update_enabled": True,
             "auto_start_enabled": False,
@@ -28,6 +34,10 @@ def default_settings():
             "auto_antics_dance_chance": 55,
             "rare_events_enabled": True,
             "chaos_mode": False,
+            "movement_enabled": True,
+            "unlocks_enabled": True,
+            "seasonal_mode_override": "auto",
+            "last_active_season": "",
             "reactions": {
                 "usb": True,
                 "battery": True,
@@ -37,6 +47,26 @@ def default_settings():
                 "random_sayings": True,
             },
             "quote_pack_states": {},
+            "favorite_skins": [],
+            "favorite_toys": [],
+            "favorite_scenarios": [],
+            "favorite_quote_packs": [],
+            "unlocked_skins": [],
+            "unlocked_toys": [],
+            "unlocked_scenarios": [],
+            "unlocked_quote_packs": [],
+            "discovery_stats": {
+                "launches": 0,
+                "quotes_spoken": 0,
+                "toy_uses": 0,
+                "scenario_runs": 0,
+                "state_changes": 0,
+                "curious_beats": 0,
+                "confused_beats": 0,
+                "runtime_minutes": 0,
+                "discoveries": 0,
+            },
+            "recent_scenarios": [],
             "favorite_sayings": [],
             "recent_sayings": [],
         },

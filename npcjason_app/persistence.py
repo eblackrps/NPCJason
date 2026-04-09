@@ -60,6 +60,32 @@ def _coerce_dict(value, default=None):
     return {} if default is None else dict(default)
 
 
+def _coerce_str_list(value, limit=30):
+    items = value if isinstance(value, list) else []
+    normalized = []
+    for entry in items[-int(limit):]:
+        text = _coerce_str(entry).strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized[-int(limit):]
+
+
+def _coerce_bool_map(value, defaults):
+    incoming = _coerce_dict(value, defaults)
+    normalized = {}
+    for key, default_value in dict(defaults).items():
+        normalized[str(key)] = _coerce_bool(incoming.get(key), default_value)
+    return normalized
+
+
+def _coerce_int_map(value, defaults):
+    incoming = _coerce_dict(value, defaults)
+    normalized = {}
+    for key, default_value in dict(defaults).items():
+        normalized[str(key)] = max(0, _coerce_int(incoming.get(key), default_value, 0))
+    return normalized
+
+
 def _normalize_schema_version(payload, key, expected_version, label, warnings):
     version = payload.get(key, expected_version)
     coerced = _coerce_int(version, expected_version, 1)
@@ -101,6 +127,10 @@ def sanitize_settings_payload(payload):
     global_out = sanitized["global"]
     global_out["sound_enabled"] = _coerce_bool(global_in.get("sound_enabled"), global_out["sound_enabled"])
     global_out["sound_volume"] = _coerce_int(global_in.get("sound_volume"), global_out["sound_volume"], 0, 100)
+    global_out["sound_categories"] = _coerce_bool_map(
+        global_in.get("sound_categories", {}),
+        default_settings()["global"]["sound_categories"],
+    )
     global_out["default_skin"] = _coerce_str(global_in.get("default_skin"), global_out["default_skin"]).strip() or global_out["default_skin"]
     global_out["auto_update_enabled"] = _coerce_bool(global_in.get("auto_update_enabled"), global_out["auto_update_enabled"])
     global_out["auto_start_enabled"] = _coerce_bool(global_in.get("auto_start_enabled"), global_out["auto_start_enabled"])
@@ -115,6 +145,13 @@ def sanitize_settings_payload(payload):
     global_out["auto_antics_dance_chance"] = _coerce_int(global_in.get("auto_antics_dance_chance"), global_out["auto_antics_dance_chance"], 0, 100)
     global_out["rare_events_enabled"] = _coerce_bool(global_in.get("rare_events_enabled"), global_out["rare_events_enabled"])
     global_out["chaos_mode"] = _coerce_bool(global_in.get("chaos_mode"), global_out["chaos_mode"])
+    global_out["movement_enabled"] = _coerce_bool(global_in.get("movement_enabled"), global_out["movement_enabled"])
+    global_out["unlocks_enabled"] = _coerce_bool(global_in.get("unlocks_enabled"), global_out["unlocks_enabled"])
+    seasonal_mode = _coerce_str(global_in.get("seasonal_mode_override", global_out["seasonal_mode_override"])).strip()
+    global_out["seasonal_mode_override"] = seasonal_mode or global_out["seasonal_mode_override"]
+    global_out["last_active_season"] = _coerce_str(
+        global_in.get("last_active_season", global_out["last_active_season"])
+    ).strip()
 
     reactions_in = global_in.get("reactions", {})
     if not isinstance(reactions_in, dict):
@@ -135,13 +172,21 @@ def sanitize_settings_payload(payload):
         if pack_key and pack_key not in quote_pack_states:
             quote_pack_states[pack_key] = False
     global_out["quote_pack_states"] = quote_pack_states
+    global_out["favorite_skins"] = _coerce_str_list(global_in.get("favorite_skins", []))
+    global_out["favorite_toys"] = _coerce_str_list(global_in.get("favorite_toys", []))
+    global_out["favorite_scenarios"] = _coerce_str_list(global_in.get("favorite_scenarios", []))
+    global_out["favorite_quote_packs"] = _coerce_str_list(global_in.get("favorite_quote_packs", []))
+    global_out["unlocked_skins"] = _coerce_str_list(global_in.get("unlocked_skins", []), limit=60)
+    global_out["unlocked_toys"] = _coerce_str_list(global_in.get("unlocked_toys", []), limit=60)
+    global_out["unlocked_scenarios"] = _coerce_str_list(global_in.get("unlocked_scenarios", []), limit=60)
+    global_out["unlocked_quote_packs"] = _coerce_str_list(global_in.get("unlocked_quote_packs", []), limit=60)
+    global_out["discovery_stats"] = _coerce_int_map(
+        global_in.get("discovery_stats", {}),
+        default_settings()["global"]["discovery_stats"],
+    )
+    global_out["recent_scenarios"] = _coerce_str_list(global_in.get("recent_scenarios", []), limit=12)
 
-    favorites = []
-    for entry in global_in.get("favorite_sayings", []):
-        text = _coerce_str(entry).strip()
-        if text:
-            favorites.append(text)
-    global_out["favorite_sayings"] = favorites[-30:]
+    global_out["favorite_sayings"] = _coerce_str_list(global_in.get("favorite_sayings", []))
 
     recent = []
     for entry in global_in.get("recent_sayings", []):
@@ -178,6 +223,8 @@ def sanitize_settings_payload(payload):
             "skin": _coerce_str(value.get("skin", global_out["default_skin"])).strip() or global_out["default_skin"],
             "mood": mood,
             "name": _coerce_str(value.get("name", "Jason")).strip() or "Jason",
+            "personality_state": _coerce_str(value.get("personality_state", "idle")).strip() or "idle",
+            "last_scenario": _coerce_str(value.get("last_scenario", "")).strip(),
             "updated_at": _coerce_float(value.get("updated_at", 0.0)),
         }
         instances_out[_coerce_str(pet_id).strip() or "main"] = entry

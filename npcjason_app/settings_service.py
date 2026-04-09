@@ -29,12 +29,15 @@ class InstanceSettings:
     skin: str = "jason"
     mood: str = "happy"
     name: str = "Jason"
+    personality_state: str = "idle"
+    last_scenario: str = ""
 
 
 @dataclass
 class GlobalSettings:
     sound_enabled: bool = True
     sound_volume: int = 70
+    sound_categories: Dict[str, bool] = field(default_factory=dict)
     auto_update_enabled: bool = True
     event_reactions_enabled: bool = True
     quiet_hours_enabled: bool = False
@@ -47,8 +50,22 @@ class GlobalSettings:
     auto_antics_dance_chance: int = 55
     rare_events_enabled: bool = True
     chaos_mode: bool = False
+    movement_enabled: bool = True
+    unlocks_enabled: bool = True
+    seasonal_mode_override: str = "auto"
+    last_active_season: str = ""
     reaction_toggles: Dict[str, bool] = field(default_factory=dict)
     quote_pack_states: Dict[str, bool] = field(default_factory=dict)
+    favorite_skins: List[str] = field(default_factory=list)
+    favorite_toys: List[str] = field(default_factory=list)
+    favorite_scenarios: List[str] = field(default_factory=list)
+    favorite_quote_packs: List[str] = field(default_factory=list)
+    unlocked_skins: List[str] = field(default_factory=list)
+    unlocked_toys: List[str] = field(default_factory=list)
+    unlocked_scenarios: List[str] = field(default_factory=list)
+    unlocked_quote_packs: List[str] = field(default_factory=list)
+    discovery_stats: Dict[str, int] = field(default_factory=dict)
+    recent_scenarios: List[str] = field(default_factory=list)
     favorite_templates: List[str] = field(default_factory=list)
     recent_sayings: List[dict] = field(default_factory=list)
 
@@ -90,6 +107,45 @@ def normalize_recent_sayings(items, now=None):
     return normalized
 
 
+def normalize_string_list(items, limit=30):
+    normalized = []
+    for item in list(items or [])[-int(limit):]:
+        text = str(item).strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return normalized[-int(limit):]
+
+
+def normalize_bool_map(items, allowed_keys=None):
+    items = items if isinstance(items, dict) else {}
+    allowed = set(allowed_keys or items.keys())
+    normalized = {}
+    for key in allowed:
+        if str(key).strip() in items:
+            normalized[str(key).strip()] = bool(items[str(key).strip()])
+    for key, value in items.items():
+        text = str(key).strip()
+        if text and text not in normalized and text in allowed:
+            normalized[text] = bool(value)
+    return normalized
+
+
+def normalize_int_map(items, allowed_keys=None):
+    items = items if isinstance(items, dict) else {}
+    allowed = set(allowed_keys or items.keys())
+    normalized = {}
+    for key in allowed:
+        text = str(key).strip()
+        if not text:
+            continue
+        try:
+            value = int(items.get(text, 0))
+        except (TypeError, ValueError):
+            value = 0
+        normalized[text] = max(0, value)
+    return normalized
+
+
 class SettingsService:
     def __init__(self, store, startup_manager=None, logger=None):
         self.store = store
@@ -106,6 +162,8 @@ class SettingsService:
         instance_settings = settings.get("instances", {}).get(pet_id, {})
         global_settings = settings.get("global", {})
         reaction_defaults = default_settings()["global"]["reactions"]
+        sound_category_defaults = default_settings()["global"]["sound_categories"]
+        discovery_defaults = default_settings()["global"]["discovery_stats"]
         pet_name = str(
             instance_settings.get(
                 "name",
@@ -119,6 +177,10 @@ class SettingsService:
         global_snapshot = GlobalSettings(
             sound_enabled=bool(global_settings.get("sound_enabled", True)),
             sound_volume=int(global_settings.get("sound_volume", 70)),
+            sound_categories={
+                **sound_category_defaults,
+                **normalize_bool_map(global_settings.get("sound_categories", {}), sound_category_defaults.keys()),
+            },
             auto_update_enabled=bool(global_settings.get("auto_update_enabled", True)),
             event_reactions_enabled=bool(global_settings.get("event_reactions_enabled", True)),
             quiet_hours_enabled=bool(global_settings.get("quiet_hours_enabled", False)),
@@ -131,12 +193,29 @@ class SettingsService:
             auto_antics_dance_chance=int(global_settings.get("auto_antics_dance_chance", 55)),
             rare_events_enabled=bool(global_settings.get("rare_events_enabled", True)),
             chaos_mode=bool(global_settings.get("chaos_mode", False)),
+            movement_enabled=bool(global_settings.get("movement_enabled", True)),
+            unlocks_enabled=bool(global_settings.get("unlocks_enabled", True)),
+            seasonal_mode_override=str(global_settings.get("seasonal_mode_override", "auto")).strip() or "auto",
+            last_active_season=str(global_settings.get("last_active_season", "")).strip(),
             reaction_toggles={**reaction_defaults, **dict(global_settings.get("reactions", {}))},
             quote_pack_states={
                 str(key).strip(): bool(value)
                 for key, value in dict(global_settings.get("quote_pack_states", {})).items()
                 if str(key).strip()
             },
+            favorite_skins=normalize_string_list(global_settings.get("favorite_skins", [])),
+            favorite_toys=normalize_string_list(global_settings.get("favorite_toys", [])),
+            favorite_scenarios=normalize_string_list(global_settings.get("favorite_scenarios", [])),
+            favorite_quote_packs=normalize_string_list(global_settings.get("favorite_quote_packs", [])),
+            unlocked_skins=normalize_string_list(global_settings.get("unlocked_skins", []), limit=60),
+            unlocked_toys=normalize_string_list(global_settings.get("unlocked_toys", []), limit=60),
+            unlocked_scenarios=normalize_string_list(global_settings.get("unlocked_scenarios", []), limit=60),
+            unlocked_quote_packs=normalize_string_list(global_settings.get("unlocked_quote_packs", []), limit=60),
+            discovery_stats={
+                **discovery_defaults,
+                **normalize_int_map(global_settings.get("discovery_stats", {}), discovery_defaults.keys()),
+            },
+            recent_scenarios=normalize_string_list(global_settings.get("recent_scenarios", []), limit=12),
             favorite_templates=[
                 str(item).strip()
                 for item in global_settings.get("favorite_sayings", [])
@@ -150,6 +229,8 @@ class SettingsService:
             skin=str(instance_settings.get("skin", global_settings.get("default_skin", "jason"))),
             mood=mood,
             name=pet_name,
+            personality_state=str(instance_settings.get("personality_state", "idle")).strip() or "idle",
+            last_scenario=str(instance_settings.get("last_scenario", "")).strip(),
         )
         return SettingsSnapshot(
             global_settings=global_snapshot,
@@ -167,6 +248,7 @@ class SettingsService:
             data.setdefault("instances", {})
             data["global"]["sound_enabled"] = bool(global_settings.sound_enabled)
             data["global"]["sound_volume"] = int(global_settings.sound_volume)
+            data["global"]["sound_categories"] = dict(global_settings.sound_categories)
             data["global"]["default_skin"] = str(instance_settings.skin)
             data["global"]["auto_update_enabled"] = bool(global_settings.auto_update_enabled)
             data["global"]["auto_start_enabled"] = self._startup_enabled()
@@ -181,8 +263,26 @@ class SettingsService:
             data["global"]["auto_antics_dance_chance"] = int(global_settings.auto_antics_dance_chance)
             data["global"]["rare_events_enabled"] = bool(global_settings.rare_events_enabled)
             data["global"]["chaos_mode"] = bool(global_settings.chaos_mode)
+            data["global"]["movement_enabled"] = bool(global_settings.movement_enabled)
+            data["global"]["unlocks_enabled"] = bool(global_settings.unlocks_enabled)
+            data["global"]["seasonal_mode_override"] = str(global_settings.seasonal_mode_override or "auto")
+            data["global"]["last_active_season"] = str(global_settings.last_active_season or "")
             data["global"]["reactions"] = dict(global_settings.reaction_toggles)
             data["global"]["quote_pack_states"] = dict(global_settings.quote_pack_states)
+            data["global"]["favorite_skins"] = list(global_settings.favorite_skins[-30:])
+            data["global"]["favorite_toys"] = list(global_settings.favorite_toys[-30:])
+            data["global"]["favorite_scenarios"] = list(global_settings.favorite_scenarios[-30:])
+            data["global"]["favorite_quote_packs"] = list(global_settings.favorite_quote_packs[-30:])
+            data["global"]["unlocked_skins"] = list(global_settings.unlocked_skins[-60:])
+            data["global"]["unlocked_toys"] = list(global_settings.unlocked_toys[-60:])
+            data["global"]["unlocked_scenarios"] = list(global_settings.unlocked_scenarios[-60:])
+            data["global"]["unlocked_quote_packs"] = list(global_settings.unlocked_quote_packs[-60:])
+            data["global"]["discovery_stats"] = {
+                str(key).strip(): max(0, int(value))
+                for key, value in dict(global_settings.discovery_stats).items()
+                if str(key).strip()
+            }
+            data["global"]["recent_scenarios"] = list(global_settings.recent_scenarios[-12:])
             data["global"]["favorite_sayings"] = list(global_settings.favorite_templates[-30:])
             data["global"]["recent_sayings"] = list(global_settings.recent_sayings[-30:])
             data["instances"][pet_id] = {
@@ -191,6 +291,8 @@ class SettingsService:
                 "skin": instance_settings.skin,
                 "mood": instance_settings.mood,
                 "name": instance_settings.name,
+                "personality_state": instance_settings.personality_state,
+                "last_scenario": instance_settings.last_scenario,
                 "updated_at": time.time(),
             }
             normalized, warnings = sanitize_settings_payload(data)

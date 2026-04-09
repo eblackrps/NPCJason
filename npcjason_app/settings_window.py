@@ -13,16 +13,23 @@ class SettingsWindow(tk.Toplevel):
         self.title(f"{APP_NAME} Settings")
         self.attributes("-topmost", True)
         self.configure(bg="#f4f1de")
-        self.geometry("780x640")
-        self.minsize(760, 620)
+        self.geometry("920x700")
+        self.minsize(900, 680)
 
         self.skin_labels = app.available_skin_labels()
         self.label_to_key = {label: key for key, label in self.skin_labels.items()}
+        self.seasonal_options = app.available_seasonal_modes()
+        self.seasonal_labels = {option["key"]: option["label"] for option in self.seasonal_options}
+        self.seasonal_label_to_key = {option["label"]: option["key"] for option in self.seasonal_options}
 
         self.pet_name_var = tk.StringVar(value=app.pet_name)
         self.skin_var = tk.StringVar(value=self.skin_labels.get(app.skin_key, app.skin_key))
         self.sound_enabled_var = tk.BooleanVar(value=app.sound_enabled)
         self.sound_volume_var = tk.IntVar(value=app.sound_manager.volume)
+        self.sound_category_vars = {
+            key: tk.BooleanVar(value=app.sound_categories.get(key, True))
+            for key in ("speech", "toy", "state", "scenario")
+        }
         self.auto_start_var = tk.BooleanVar(value=app.startup_manager.is_enabled())
         self.auto_update_var = tk.BooleanVar(value=app.auto_update_enabled)
         self.event_reactions_var = tk.BooleanVar(value=app.event_reactions_enabled)
@@ -36,6 +43,11 @@ class SettingsWindow(tk.Toplevel):
         self.auto_antics_dance_var = tk.IntVar(value=app.auto_antics_dance_chance)
         self.rare_events_var = tk.BooleanVar(value=app.rare_events_enabled)
         self.chaos_mode_var = tk.BooleanVar(value=app.chaos_mode)
+        self.movement_enabled_var = tk.BooleanVar(value=app.movement_enabled)
+        self.unlocks_enabled_var = tk.BooleanVar(value=app.unlocks_enabled)
+        self.seasonal_mode_var = tk.StringVar(
+            value=self.seasonal_labels.get(app.seasonal_mode_override, app.seasonal_mode_override)
+        )
         self.reaction_vars = {
             "usb": tk.BooleanVar(value=app.reaction_toggles.get("usb", True)),
             "battery": tk.BooleanVar(value=app.reaction_toggles.get("battery", True)),
@@ -46,6 +58,23 @@ class SettingsWindow(tk.Toplevel):
         }
         self.quote_pack_vars = {
             pack["key"]: tk.BooleanVar(value=pack["enabled"])
+            for pack in app.available_quote_packs()
+        }
+        self.favorite_skin_vars = {
+            skin_key: tk.BooleanVar(value=app._is_favorite("skin", skin_key))
+            for skin_key in app.available_skin_keys()
+        }
+        self.favorite_toy_vars = {
+            toy["key"]: tk.BooleanVar(value=toy.get("favorite", False))
+            for toy in app.available_toys()
+        }
+        self.favorite_scenario_vars = {
+            scenario["key"]: tk.BooleanVar(value=scenario.get("favorite", False))
+            for scenario in app.available_scenarios()
+            if scenario.get("unlocked", True)
+        }
+        self.favorite_quote_pack_vars = {
+            pack["key"]: tk.BooleanVar(value=pack.get("favorite", False))
             for pack in app.available_quote_packs()
         }
         self.status_var = tk.StringVar(value=f"Version {APP_VERSION}")
@@ -75,13 +104,16 @@ class SettingsWindow(tk.Toplevel):
 
         general = tk.Frame(notebook, bg="#f4f1de")
         behavior = tk.Frame(notebook, bg="#f4f1de")
+        personalize = tk.Frame(notebook, bg="#f4f1de")
         pets = tk.Frame(notebook, bg="#f4f1de")
         notebook.add(general, text="General")
         notebook.add(behavior, text="Behavior")
+        notebook.add(personalize, text="Personalize")
         notebook.add(pets, text="Pets && History")
 
         self._build_general_tab(general)
         self._build_behavior_tab(behavior)
+        self._build_personalize_tab(personalize)
         self._build_pets_tab(pets)
 
         footer = tk.Frame(outer, bg="#f4f1de")
@@ -297,6 +329,125 @@ class SettingsWindow(tk.Toplevel):
                 justify="left",
             ).pack(anchor="w", pady=(4, 0))
 
+    def _build_personalize_tab(self, parent):
+        left = tk.Frame(parent, bg="#f4f1de")
+        left.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
+        right = tk.Frame(parent, bg="#f4f1de")
+        right.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+
+        presence = tk.LabelFrame(left, text="Presence && Discovery", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
+        presence.pack(fill="both", expand=True)
+        tk.Checkbutton(
+            presence,
+            text="Enable autonomous movement",
+            variable=self.movement_enabled_var,
+            bg="#f4f1de",
+            fg="#1a1a2e",
+            selectcolor="#f4f1de",
+        ).pack(anchor="w")
+        tk.Checkbutton(
+            presence,
+            text="Enable unlockable discoveries",
+            variable=self.unlocks_enabled_var,
+            bg="#f4f1de",
+            fg="#1a1a2e",
+            selectcolor="#f4f1de",
+        ).pack(anchor="w", pady=(6, 0))
+        tk.Label(presence, text="Special mode", bg="#f4f1de", fg="#1a1a2e").pack(anchor="w", pady=(10, 0))
+        seasonal_box = ttk.Combobox(
+            presence,
+            textvariable=self.seasonal_mode_var,
+            values=[option["label"] for option in self.seasonal_options],
+            state="readonly",
+            width=28,
+        )
+        seasonal_box.pack(anchor="w", pady=(2, 6))
+        tk.Label(
+            presence,
+            text="Choose auto scheduling, turn special content off, or force a themed mode.",
+            bg="#f4f1de",
+            fg="#4a4e69",
+            justify="left",
+            wraplength=320,
+        ).pack(anchor="w")
+
+        discoveries = tk.LabelFrame(left, text="Discoveries", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
+        discoveries.pack(fill="both", expand=True, pady=(10, 0))
+        self.discovery_list = tk.Listbox(discoveries, height=10, width=42)
+        self.discovery_list.pack(fill="both", expand=True)
+        self._refresh_discovery_list()
+
+        audio = tk.LabelFrame(right, text="Audio Personality", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
+        audio.pack(fill="x")
+        labels = {
+            "speech": "Speech chirps",
+            "toy": "Toy sounds",
+            "state": "Mood/state cues",
+            "scenario": "Scenario stingers",
+        }
+        for key, label in labels.items():
+            tk.Checkbutton(
+                audio,
+                text=label,
+                variable=self.sound_category_vars[key],
+                bg="#f4f1de",
+                fg="#1a1a2e",
+                selectcolor="#f4f1de",
+            ).pack(anchor="w", pady=(4, 0))
+
+        favorites = tk.LabelFrame(right, text="Taste Shaping Favorites", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
+        favorites.pack(fill="both", expand=True, pady=(10, 0))
+
+        skins = tk.LabelFrame(favorites, text="Skins", bg="#f4f1de", fg="#1a1a2e", padx=8, pady=6)
+        skins.pack(fill="x")
+        for skin_key in self.app.available_skin_keys():
+            tk.Checkbutton(
+                skins,
+                text=self.skin_labels.get(skin_key, skin_key),
+                variable=self.favorite_skin_vars[skin_key],
+                bg="#f4f1de",
+                fg="#1a1a2e",
+                selectcolor="#f4f1de",
+            ).pack(anchor="w")
+
+        toys = tk.LabelFrame(favorites, text="Toys", bg="#f4f1de", fg="#1a1a2e", padx=8, pady=6)
+        toys.pack(fill="x", pady=(8, 0))
+        for toy in self.app.available_toys():
+            tk.Checkbutton(
+                toys,
+                text=toy["label"],
+                variable=self.favorite_toy_vars[toy["key"]],
+                bg="#f4f1de",
+                fg="#1a1a2e",
+                selectcolor="#f4f1de",
+            ).pack(anchor="w")
+
+        scenarios = tk.LabelFrame(favorites, text="Scenarios", bg="#f4f1de", fg="#1a1a2e", padx=8, pady=6)
+        scenarios.pack(fill="x", pady=(8, 0))
+        for scenario in self.app.available_scenarios():
+            if not scenario.get("unlocked", True):
+                continue
+            tk.Checkbutton(
+                scenarios,
+                text=scenario["label"],
+                variable=self.favorite_scenario_vars[scenario["key"]],
+                bg="#f4f1de",
+                fg="#1a1a2e",
+                selectcolor="#f4f1de",
+            ).pack(anchor="w")
+
+        packs = tk.LabelFrame(favorites, text="Quote Packs", bg="#f4f1de", fg="#1a1a2e", padx=8, pady=6)
+        packs.pack(fill="x", pady=(8, 0))
+        for pack in self.app.available_quote_packs():
+            tk.Checkbutton(
+                packs,
+                text=pack["label"],
+                variable=self.favorite_quote_pack_vars[pack["key"]],
+                bg="#f4f1de",
+                fg="#1a1a2e",
+                selectcolor="#f4f1de",
+            ).pack(anchor="w")
+
     def _build_pets_tab(self, parent):
         pets = tk.LabelFrame(parent, text="Active Pets", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
         pets.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
@@ -348,6 +499,7 @@ class SettingsWindow(tk.Toplevel):
             skin_key=self.label_to_key.get(self.skin_var.get(), self.app.skin_key),
             sound_enabled=self.sound_enabled_var.get(),
             sound_volume=self.sound_volume_var.get(),
+            sound_categories={key: variable.get() for key, variable in self.sound_category_vars.items()},
             auto_start_enabled=self.auto_start_var.get(),
             auto_update_enabled=self.auto_update_var.get(),
             event_reactions_enabled=self.event_reactions_var.get(),
@@ -361,13 +513,21 @@ class SettingsWindow(tk.Toplevel):
             auto_antics_dance_chance=self.auto_antics_dance_var.get(),
             rare_events_enabled=self.rare_events_var.get(),
             chaos_mode=self.chaos_mode_var.get(),
+            movement_enabled=self.movement_enabled_var.get(),
+            unlocks_enabled=self.unlocks_enabled_var.get(),
+            seasonal_mode_override=self.seasonal_label_to_key.get(self.seasonal_mode_var.get(), "auto"),
             pet_name=self.pet_name_var.get().strip() or self.app.pet_name,
             reaction_toggles=reaction_toggles,
+            favorite_skins=[key for key, variable in self.favorite_skin_vars.items() if variable.get()],
+            favorite_toys=[key for key, variable in self.favorite_toy_vars.items() if variable.get()],
+            favorite_scenarios=[key for key, variable in self.favorite_scenario_vars.items() if variable.get()],
+            favorite_quote_packs=[key for key, variable in self.favorite_quote_pack_vars.items() if variable.get()],
         )
         for pack_key, variable in self.quote_pack_vars.items():
             self.app.set_quote_pack_enabled(pack_key, variable.get())
         self._refresh_skin_metadata()
         self._refresh_history_lists()
+        self._refresh_discovery_list()
         self.status_var.set("Settings applied")
 
     def _test_sound(self):
@@ -403,6 +563,19 @@ class SettingsWindow(tk.Toplevel):
         self.favorites_list.delete(0, tk.END)
         for template in self.app.favorite_saying_texts():
             self.favorites_list.insert(tk.END, template)
+
+    def _refresh_discovery_list(self):
+        if not hasattr(self, "discovery_list"):
+            return
+        self.discovery_list.delete(0, tk.END)
+        for item in self.app.available_discoveries():
+            status = "Unlocked" if item.get("unlocked") else "Locked"
+            progress_text = item.get("progress_text", "")
+            if item.get("unlocked") or not progress_text:
+                row = f"{status} | {item['label']} | {item['item_type']}"
+            else:
+                row = f"{status} | {item['label']} | {item['item_type']} | {progress_text}"
+            self.discovery_list.insert(tk.END, row)
 
     def _refresh_active_pets(self):
         if not self.winfo_exists():
