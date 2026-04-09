@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "npcjason"
+dynamic = ["version"]
+description = "A Windows desktop pet companion built with Python and Tkinter."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "pystray>=0.19.0",
+  "Pillow>=10.0.0",
+]
+
+[project.optional-dependencies]
+build = [
+  "PyInstaller>=6.0",
+]
+dev = [
+  "PyInstaller>=6.0",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "npcjason_app.version.APP_VERSION" }
+
+[tool.setuptools.packages.find]
+include = ["npcjason_app*"]

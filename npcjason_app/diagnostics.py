@@ -1,4 +1,4 @@
-from datetime import datetime
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -12,14 +12,41 @@ class DiagnosticsLogger:
         self.path = Path(path)
         self._lock = threading.Lock()
         ensure_app_dirs()
+        self._logger = logging.getLogger(f"NPCJason:{self.path}")
+        self._logger.setLevel(logging.INFO)
+        self._logger.propagate = False
+        self._handler = None
+        self._configure_handler()
+
+    def _configure_handler(self):
+        with self._lock:
+            if self._handler:
+                return
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            handler = logging.FileHandler(self.path, encoding="utf-8")
+            handler.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s %(message)s"))
+            self._logger.addHandler(handler)
+            self._handler = handler
+
+    def _emit(self, level, message, *args, **kwargs):
+        self._configure_handler()
+        self._logger.log(level, str(message), *args, **kwargs)
 
     def log(self, message):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        line = f"[{timestamp}] {message}\n"
-        with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(line)
+        self.info(message)
+
+    def info(self, message):
+        self._emit(logging.INFO, message)
+
+    def warning(self, message):
+        self._emit(logging.WARNING, message)
+
+    def error(self, message):
+        self._emit(logging.ERROR, message)
+
+    def exception(self, message):
+        self._configure_handler()
+        self._logger.exception(str(message))
 
     def open_log_file(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)

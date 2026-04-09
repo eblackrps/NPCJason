@@ -9,6 +9,7 @@ class SettingsWindow(tk.Toplevel):
     def __init__(self, app):
         super().__init__(app.root)
         self.app = app
+        self._refresh_after_id = None
         self.title(f"{APP_NAME} Settings")
         self.attributes("-topmost", True)
         self.configure(bg="#f4f1de")
@@ -170,7 +171,7 @@ class SettingsWindow(tk.Toplevel):
         maintenance.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
 
         tk.Button(maintenance, text="Reload Sayings", command=self._reload_dialogue, width=16).pack(anchor="w")
-        tk.Button(maintenance, text="Bring Back On Screen", command=self.app._bring_back_on_screen, width=16).pack(anchor="w", pady=(6, 0))
+        tk.Button(maintenance, text="Bring Back On Screen", command=self.app.bring_back_on_screen, width=16).pack(anchor="w", pady=(6, 0))
         tk.Button(maintenance, text="Open Data Folder", command=self.app.open_data_folder, width=16).pack(anchor="w", pady=(6, 0))
         tk.Button(maintenance, text="Open Log File", command=self.app.open_log_file, width=16).pack(anchor="w", pady=(6, 0))
         tk.Button(maintenance, text="Export Settings", command=self._export_settings, width=16).pack(anchor="w", pady=(14, 0))
@@ -363,7 +364,7 @@ class SettingsWindow(tk.Toplevel):
         for pet_id, description in pets:
             self.pets_list.insert(tk.END, f"{pet_id} | {description}")
         self._refresh_history_lists()
-        self.after(2500, self._refresh_active_pets)
+        self._refresh_after_id = self.after(2500, self._refresh_active_pets)
 
     def _dismiss_selected_pet(self):
         selection = self.pets_list.curselection()
@@ -408,4 +409,10 @@ class SettingsWindow(tk.Toplevel):
         self.destroy()
 
     def _close(self):
+        if self._refresh_after_id is not None:
+            try:
+                self.after_cancel(self._refresh_after_id)
+            except tk.TclError:
+                pass
+            self._refresh_after_id = None
         self.destroy()

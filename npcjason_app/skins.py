@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import re
 
 from .paths import BUNDLED_SKINS_DIR, RESOURCE_SKINS_DIR
 
@@ -202,6 +203,7 @@ IDLE_SEQUENCE = [
 
 DANCE_SEQUENCE = ["dance1", "dance2", "dance3", "dance2", "dance1"]
 EMPTY_OVERLAY = ["." * GRID_W for _ in range(GRID_H)]
+HEX_COLOR_PATTERN = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 def default_skin_definition():
@@ -246,6 +248,10 @@ def _normalize_overlay(rows):
     return normalized
 
 
+def _valid_color(value):
+    return isinstance(value, str) and bool(HEX_COLOR_PATTERN.match(value.strip()))
+
+
 def validate_skin_definition(data, source_name="<memory>"):
     errors = []
     normalized = dict(data or {})
@@ -275,10 +281,14 @@ def validate_skin_definition(data, source_name="<memory>"):
         errors.append(f"{source_name}: 'palette' must be an object")
         normalized["palette"] = {}
     else:
-        normalized["palette"] = {
-            str(key)[:1]: str(value)
-            for key, value in normalized.get("palette", {}).items()
-        }
+        palette = {}
+        for key, value in normalized.get("palette", {}).items():
+            color = str(value).strip()
+            if not _valid_color(color):
+                errors.append(f"{source_name}: invalid palette color for '{str(key)[:1]}'")
+                continue
+            palette[str(key)[:1]] = color
+        normalized["palette"] = palette
 
     tray = normalized.get("tray", {})
     if not isinstance(tray, dict):
@@ -290,6 +300,10 @@ def validate_skin_definition(data, source_name="<memory>"):
         "body": str(tray.get("body", default_tray["body"])),
         "legs": str(tray.get("legs", default_tray["legs"])),
     }
+    for part, default_color in default_tray.items():
+        if not _valid_color(normalized["tray"][part]):
+            errors.append(f"{source_name}: invalid tray color for '{part}'")
+            normalized["tray"][part] = default_color
     normalized["overlay"] = _normalize_overlay(normalized.get("overlay", EMPTY_OVERLAY))
     return normalized, errors
 
@@ -308,13 +322,15 @@ def load_skin_bundle():
         for path in sorted(directory.glob("*.json")):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
                 errors.append(f"{path.name}: could not parse JSON")
                 continue
             normalized, skin_errors = validate_skin_definition(data, path.name)
             errors.extend(skin_errors)
             if normalized is None:
                 continue
+            if normalized["key"] in definitions:
+                errors.append(f"{path.name}: overriding existing skin key '{normalized['key']}'")
             definitions[normalized["key"]] = normalized
 
     if "jason" not in definitions:

@@ -2,24 +2,22 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.2.0`
+> **Current release target:** `v1.3.0`
 
 ---
 
-## What’s New In v1.2.0
+## What’s New In v1.3.0
 
-This release adds the next 10 quality-of-life passes:
+This release focuses on the post-stabilization hardening pass:
 
-- Custom pet naming, including named summoned friends
-- Dialogue placeholders such as `{pet_name}`, `{mood}`, `{time}`, and `{active_window}`
-- Quiet hours plus fullscreen do-not-disturb for automatic chatter
-- Granular reaction toggles for USB, battery, focus, updates, pet chat, and ambient sayings
-- Recent-sayings history and favorite quote templates
-- Automatic antics scheduling with configurable timing and dance chance
-- Edge snapping plus a reliable “Bring Back On Screen” recovery option
-- Settings export, import, and reset flows
-- Skin metadata plus validation feedback in Settings
-- Diagnostics logging with quick-open shortcuts for the data folder and log file
+- Thinner runtime composition with clearer window, tray, scheduler, persistence, and state boundaries
+- Explicit pause/suppression state for drag, tray hide, fullscreen, quiet hours, and screenshot recovery
+- Safer scheduler behavior with job ownership, retry tracking, queue backpressure logging, and cleaner shutdown
+- Single-flight update checks so repeated manual requests do not fan out overlapping background work
+- Stronger settings and shared-state sanitization, schema repair, corrupt-file backup, and atomic export/write behavior
+- More defensive dialogue, skin, and sound loading with bounded fallbacks instead of silent failure
+- Expanded regression coverage for runtime state, scheduler recovery, persistence repair, speech history, tray state, and update coordination
+- Build and release automation aligned with `pyproject.toml`, `pip check`, and compile-time sanity validation
 
 ---
 
@@ -61,7 +59,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.2.0.exe` for the installer
+   - `NPCJason_Setup_1.3.0.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -120,7 +118,7 @@ NPCJason stores state in `%APPDATA%\NPCJason\`.
 ### Run from source
 
 ```bat
-python -m pip install -r requirements.txt
+python -m pip install .
 python npcjason.py
 ```
 
@@ -133,7 +131,9 @@ run_npcjason.bat
 ### Run tests
 
 ```bat
-python -m unittest discover -s tests
+python -m pip install ".[build]"
+python -m unittest discover -s tests -v
+python -m compileall npcjason_app tests npcjason.py
 ```
 
 ### Build the standalone EXE
@@ -142,7 +142,7 @@ python -m unittest discover -s tests
 build.bat
 ```
 
-This installs dependencies, runs tests, generates the icon, and produces `dist\NPCJason.exe`.
+This installs dependencies from [`pyproject.toml`](./pyproject.toml), runs tests, generates the icon, and produces `dist\NPCJason.exe`.
 
 ### Build the installer
 
@@ -153,28 +153,39 @@ This installs dependencies, runs tests, generates the icon, and produces `dist\N
 build_installer.bat
 ```
 
-This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.2.0.exe`.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.3.0.exe`.
 
 ### Release automation
 
 Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github/workflows/release.yml), which:
 
 1. Reads the app version from source
-2. Installs dependencies
+2. Installs dependencies and validates them with `pip check`
 3. Runs the test suite
-4. Builds the standalone EXE
-5. Builds the installer
-6. Generates SHA256 checksums
-7. Uploads all release assets to GitHub
+4. Compiles the source tree as a packaging sanity check
+5. Builds the standalone EXE
+6. Builds the installer
+7. Generates SHA256 checksums
+8. Uploads all release assets to GitHub
 
 ### Project layout
 
 | Path | Purpose |
 |------|---------|
 | `npcjason.py` | Thin launcher entrypoint |
-| `npcjason_app/app.py` | Main runtime app |
+| `npcjason_app/app.py` | Thin application entry wrapper |
+| `npcjason_app/app_controller.py` | Main composition root and runtime orchestration |
+| `npcjason_app/pet_window.py` | Tk window adapter and on-screen geometry |
+| `npcjason_app/runtime_state.py` | Explicit runtime/suppression/pause state model |
+| `npcjason_app/scheduler.py` | Managed Tk scheduler and UI dispatch loop |
+| `npcjason_app/settings_service.py` | Settings load/save/import/export/reset logic |
+| `npcjason_app/persistence.py` | Settings/shared-state schema sanitization |
+| `npcjason_app/speech_history.py` | Recent/favorite saying history management |
 | `npcjason_app/dialogue.py` | Sayings, dialogue packs, event text |
 | `npcjason_app/skins.py` | Frame rendering + skin loading |
+| `npcjason_app/updates.py` | Update parsing, async checks, and prompt coordination |
+| `npcjason_app/tray_controller.py` | System tray adapter and tray-state modeling |
+| `npcjason_app/windows_platform.py` | Screen/work-area geometry helpers |
 | `npcjason_app/windows_events.py` | Native Windows event hooks |
 | `npcjason_app/settings_window.py` | Settings UI |
 | `npcjason_app/sound.py` | Sound asset generation + playback |

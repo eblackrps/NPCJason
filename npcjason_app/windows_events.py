@@ -2,6 +2,8 @@ import ctypes
 from ctypes import wintypes
 import os
 
+from .windows_platform import is_rect_fullscreen, primary_work_area
+
 
 IS_WINDOWS = os.name == "nt"
 
@@ -135,27 +137,36 @@ def is_foreground_fullscreen(screen_width, screen_height):
     rect = get_window_rect()
     if not rect:
         return False
-    return (
-        rect["width"] >= max(1, screen_width - 24)
-        and rect["height"] >= max(1, screen_height - 24)
-    )
+    return is_rect_fullscreen(rect, primary_work_area(screen_width, screen_height))
 
 
 class WindowsEventBridge:
-    def __init__(self, root, on_usb_change=None, on_power_change=None, on_foreground_change=None):
+    def __init__(self, root, on_usb_change=None, on_power_change=None, on_foreground_change=None, dispatch=None):
         self.root = root
         self.on_usb_change = on_usb_change
         self.on_power_change = on_power_change
         self.on_foreground_change = on_foreground_change
+        self.dispatch = dispatch
         self.hwnd = None
         self.old_wndproc = None
         self._wndproc_ref = None
         self._foreground_hook = None
         self._foreground_callback = None
+        self._installed = False
+
+    def _emit(self, callback, *args):
+        if callback is None:
+            return
+        if self.dispatch:
+            self.dispatch(callback, *args)
+            return
+        callback(*args)
 
     def install(self):
         if not IS_WINDOWS:
             return False
+        if self._installed:
+            return True
 
         self.hwnd = self.root.winfo_id()
 
@@ -168,11 +179,9 @@ class WindowsEventBridge:
         )
         def wndproc(hwnd, msg, wparam, lparam):
             if msg == WM_DEVICECHANGE and wparam in (DBT_DEVICEARRIVAL, DBT_DEVICEREMOVECOMPLETE):
-                if self.on_usb_change:
-                    self.root.after(0, self.on_usb_change)
+                self._emit(self.on_usb_change)
             elif msg == WM_POWERBROADCAST and wparam == PBT_APMPOWERSTATUSCHANGE:
-                if self.on_power_change:
-                    self.root.after(0, self.on_power_change)
+                self._emit(self.on_power_change)
 
             if self.old_wndproc:
                 return user32.CallWindowProcW(self.old_wndproc, hwnd, msg, wparam, lparam)
@@ -195,7 +204,7 @@ class WindowsEventBridge:
             if self.on_foreground_change:
                 title = get_foreground_window_title(hwnd)
                 if title:
-                    self.root.after(0, lambda current=title: self.on_foreground_change(current))
+                    self._emit(self.on_foreground_change, title)
 
         self._foreground_callback = foreground_callback
         self._foreground_hook = user32.SetWinEventHook(
@@ -207,6 +216,11 @@ class WindowsEventBridge:
             0,
             WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS,
         )
+        if not self._foreground_hook and self.hwnd and self.old_wndproc:
+            user32.SetWindowLongPtrW(self.hwnd, GWL_WNDPROC, self.old_wndproc)
+            self.old_wndproc = None
+            raise OSError("Could not install foreground event hook.")
+        self._installed = True
         return True
 
     def uninstall(self):
@@ -218,3 +232,4 @@ class WindowsEventBridge:
         if self.hwnd and self.old_wndproc:
             user32.SetWindowLongPtrW(self.hwnd, GWL_WNDPROC, self.old_wndproc)
             self.old_wndproc = None
+        self._installed = False

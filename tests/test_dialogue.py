@@ -1,6 +1,6 @@
 import unittest
 
-from npcjason_app.dialogue import merge_pools, parse_dialogue_text, render_template
+from npcjason_app.dialogue import merge_pools, parse_dialogue_source, parse_dialogue_text, render_template
 
 
 class DialogueTests(unittest.TestCase):
@@ -43,6 +43,19 @@ class DialogueTests(unittest.TestCase):
             "Hi Jason. Unknown stays {mystery}. Literal brace: {",
             rendered,
         )
+
+    def test_parse_dialogue_source_reports_unknown_sections_and_tokens(self):
+        parsed, warnings = parse_dialogue_source(
+            """
+            [boss]
+            Beware {unknown_token}
+            """,
+            source_name="custom.txt",
+        )
+
+        self.assertIn("Beware {unknown_token}", parsed["any"])
+        self.assertTrue(any("unknown section" in warning for warning in warnings))
+        self.assertTrue(any("unknown template token" in warning for warning in warnings))
 
 
 if __name__ == "__main__":

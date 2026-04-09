@@ -38,6 +38,21 @@ class SkinTests(unittest.TestCase):
         self.assertEqual("1.0", normalized["version"])
         self.assertTrue(any("'tray' must be an object" in error for error in errors))
 
+    def test_validate_skin_definition_rejects_invalid_colors(self):
+        normalized, errors = validate_skin_definition(
+            {
+                "key": "mage",
+                "palette": {"T": "blue"},
+                "tray": {"hair": "#123456", "body": "bad", "legs": "#654321"},
+            },
+            "mage.json",
+        )
+
+        self.assertNotIn("T", normalized["palette"])
+        self.assertEqual("#3a86c8", normalized["tray"]["body"])
+        self.assertTrue(any("invalid palette color" in error for error in errors))
+        self.assertTrue(any("invalid tray color" in error for error in errors))
+
 
 if __name__ == "__main__":
     unittest.main()

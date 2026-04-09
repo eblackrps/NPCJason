@@ -1,6 +1,6 @@
 # Skin Packs
 
-Drop additional `.json` skin packs into this folder to make them available in NPCJason at runtime. The app hot-reloads this directory while running, and the Settings window will show any validation warnings it finds.
+Drop additional `.json` skin packs into this folder to make them available in NPCJason at runtime. NPCJason hot-reloads this directory while running, validates every pack before use, and reports non-fatal warnings in the Settings window and diagnostics log.
 
 Each skin file supports:
 
@@ -13,6 +13,14 @@ Each skin file supports:
 - `palette`: color overrides
 - `tray`: tray icon colors for `hair`, `body`, and `legs`
 - `overlay`: 20 strings of 16 characters each, using `.` for transparent pixels
+
+Validation notes:
+
+- `key` must be unique across all loaded packs
+- `palette` and `tray` values must be six-digit hex colors like `#2f7d32`
+- invalid palette colors are skipped instead of crashing the app
+- invalid tray colors fall back to the default tray palette
+- malformed or unreadable `.json` files are ignored with a warning so the pet keeps running
 
 Example:
 

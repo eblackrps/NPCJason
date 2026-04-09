@@ -1,5 +1,6 @@
 import math
 from pathlib import Path
+import queue
 import struct
 import threading
 import time
@@ -20,6 +21,7 @@ SOUND_PATTERNS = {
     "speech": [(0.04, 880), (0.03, 660)],
     "dance": [(0.05, 523), (0.05, 659), (0.07, 784)],
 }
+_STOP_SENTINEL = object()
 
 
 def _effect_filename(effect_name, volume):
@@ -53,9 +55,14 @@ def _build_wave_file(path, pattern, volume):
 
 
 class SoundManager:
-    def __init__(self, enabled=True, volume=70):
+    def __init__(self, enabled=True, volume=70, logger=None):
         self.enabled = bool(enabled)
         self.volume = int(volume)
+        self.logger = logger
+        self._asset_lock = threading.Lock()
+        self._play_queue = queue.Queue(maxsize=8)
+        self._worker = None
+        self._stopped = False
         ensure_app_dirs()
 
     def set_enabled(self, enabled):
@@ -66,22 +73,81 @@ class SoundManager:
 
     def _ensure_asset(self, effect_name):
         effect_path = _effect_filename(effect_name, self.volume)
-        if not effect_path.exists():
-            _build_wave_file(effect_path, SOUND_PATTERNS[effect_name], self.volume)
+        if effect_path.exists():
+            return effect_path
+        with self._asset_lock:
+            if not effect_path.exists():
+                _build_wave_file(effect_path, SOUND_PATTERNS[effect_name], self.volume)
         return effect_path
 
     def play(self, effect_name):
-        if not self.enabled or not HAS_WINSOUND or effect_name not in SOUND_PATTERNS:
+        if self._stopped or not self.enabled or not HAS_WINSOUND or effect_name not in SOUND_PATTERNS:
             return
-        threading.Thread(target=self._play_worker, args=(effect_name,), daemon=True).start()
-
-    def _play_worker(self, effect_name):
-        effect_path = self._ensure_asset(effect_name)
+        self._ensure_worker_started()
+        if self._play_queue.full():
+            try:
+                self._play_queue.get_nowait()
+            except queue.Empty:
+                pass
         try:
+            self._play_queue.put_nowait(effect_name)
+        except queue.Full:
+            self._log("warning", "sound queue full; dropping effect")
+
+    def _ensure_worker_started(self):
+        if self._worker and self._worker.is_alive():
+            return
+        self._stopped = False
+        self._worker = threading.Thread(target=self._play_worker_loop, daemon=True)
+        self._worker.start()
+
+    def _play_worker_loop(self):
+        while True:
+            effect_name = self._play_queue.get()
+            if effect_name is _STOP_SENTINEL:
+                return
+            try:
+                effect_path = self._ensure_asset(effect_name)
+                winsound.PlaySound(
+                    str(effect_path),
+                    winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
+                )
+            except (RuntimeError, OSError):
+                self._log("exception", "sound playback failed")
+            time.sleep(0.01)
+
+    def shutdown(self):
+        self._stopped = True
+        if not self._worker or not self._worker.is_alive():
+            return
+        try:
+            self._play_queue.put_nowait(_STOP_SENTINEL)
+        except queue.Full:
+            try:
+                self._play_queue.get_nowait()
+            except queue.Empty:
+                pass
+            self._play_queue.put_nowait(_STOP_SENTINEL)
+
+    @classmethod
+    def preview_effect(cls, effect_name, enabled=True, volume=70, logger=None):
+        if not enabled or not HAS_WINSOUND or effect_name not in SOUND_PATTERNS:
+            return False
+        manager = cls(enabled=enabled, volume=volume, logger=logger)
+        try:
+            effect_path = manager._ensure_asset(effect_name)
             winsound.PlaySound(
                 str(effect_path),
                 winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT,
             )
-        except RuntimeError:
+            return True
+        except (RuntimeError, OSError):
+            manager._log("exception", "sound preview failed")
+            return False
+
+    def _log(self, level, message):
+        if not self.logger:
             return
-        time.sleep(0.01)
+        log_method = getattr(self.logger, level, None)
+        if callable(log_method):
+            log_method(message)

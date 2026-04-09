@@ -1,3 +1,6 @@
+SETTINGS_SCHEMA_VERSION = 2
+SHARED_STATE_SCHEMA_VERSION = 1
+
 MOODS = {
     "happy": {"label": "Happy", "speed": 1.0},
     "tired": {"label": "Tired", "speed": 1.35},
@@ -7,6 +10,7 @@ MOODS = {
 
 def default_settings():
     return {
+        "schema_version": SETTINGS_SCHEMA_VERSION,
         "global": {
             "sound_enabled": True,
             "sound_volume": 70,
@@ -39,6 +43,7 @@ def default_settings():
 
 def default_shared_state():
     return {
+        "schema_version": SHARED_STATE_SCHEMA_VERSION,
         "instances": {},
         "conversations": [],
         "commands": [],

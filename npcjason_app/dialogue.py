@@ -106,6 +106,22 @@ PET_CONVERSATIONS = [
 ]
 
 TOKEN_PATTERN = re.compile(r"\{([a-z_]+)\}")
+SECTION_NAMES = {"any", "all", "happy", "tired", "caffeinated"}
+ALLOWED_TEMPLATE_TOKENS = {
+    "pet_name",
+    "other_pet_name",
+    "mood",
+    "mood_key",
+    "time",
+    "date",
+    "active_window",
+    "battery_percent",
+    "skin",
+    "label",
+    "percent",
+    "title",
+    "version",
+}
 
 
 def empty_pool():
@@ -122,15 +138,25 @@ def _normalize_text_block(lines):
     return "\n".join(cleaned).strip()
 
 
-def parse_dialogue_text(text):
+def unknown_template_tokens(text):
+    return sorted({token for token in TOKEN_PATTERN.findall(str(text)) if token not in ALLOWED_TEMPLATE_TOKENS})
+
+
+def parse_dialogue_source(text, source_name="<memory>"):
     custom = empty_pool()
     current_section = "any"
     current_lines = []
+    warnings = []
 
     def flush_current():
         saying = _normalize_text_block(current_lines)
         if saying:
             custom[current_section].append(saying)
+            unknown_tokens = unknown_template_tokens(saying)
+            if unknown_tokens:
+                warnings.append(
+                    f"{source_name}: unknown template token(s) {', '.join(unknown_tokens)}"
+                )
         current_lines.clear()
 
     for raw_line in text.splitlines():
@@ -145,6 +171,11 @@ def parse_dialogue_text(text):
             flush_current()
             current_section = lowered[1:-1]
             continue
+        if stripped.startswith("[") and stripped.endswith("]") and lowered[1:-1] not in SECTION_NAMES:
+            flush_current()
+            warnings.append(f"{source_name}: unknown section {stripped}; treating following lines as [any]")
+            current_section = "any"
+            continue
         if stripped.startswith("#") or stripped.startswith(";"):
             continue
         if stripped == "":
@@ -154,7 +185,12 @@ def parse_dialogue_text(text):
         current_lines.append(raw_line)
 
     flush_current()
-    return custom
+    return custom, warnings
+
+
+def parse_dialogue_text(text):
+    parsed, _warnings = parse_dialogue_source(text)
+    return parsed
 
 
 def merge_pools(*pools):
@@ -183,6 +219,7 @@ class DialogueLibrary:
         self.packs_dir = Path(packs_dir)
         self._signature = None
         self._custom_pool = empty_pool()
+        self.warnings = []
         self.reload_if_needed(force=True)
 
     def _iter_files(self):
@@ -209,14 +246,22 @@ class DialogueLibrary:
             return False
 
         pools = []
+        warnings = []
         for path in self._iter_files():
             try:
-                pools.append(parse_dialogue_text(path.read_text(encoding="utf-8")))
-            except OSError:
+                parsed, parse_warnings = parse_dialogue_source(
+                    path.read_text(encoding="utf-8"),
+                    source_name=path.name,
+                )
+                pools.append(parsed)
+                warnings.extend(parse_warnings)
+            except (OSError, UnicodeDecodeError):
+                warnings.append(f"{path.name}: could not be read")
                 continue
 
         self._custom_pool = merge_pools(*pools) if pools else empty_pool()
         self._signature = signature
+        self.warnings = warnings
         return True
 
     def ambient_pool(self, mood):
@@ -231,4 +276,7 @@ class DialogueLibrary:
         return render_template(random.choice(self.ambient_pool(mood)), context)
 
     def format_event_text(self, event_key, **context):
-        return render_template(random.choice(EVENT_SAYINGS[event_key]), context)
+        options = EVENT_SAYINGS.get(event_key)
+        if not options:
+            return render_template("Event noticed.", context)
+        return render_template(random.choice(options), context)

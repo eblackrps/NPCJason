@@ -1,4 +1,4 @@
 APP_NAME = "NPCJason"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 GITHUB_REPO = "eblackrps/NPCJason"
 GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases"

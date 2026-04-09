@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 
 from .paths import ensure_app_dirs
 
@@ -39,9 +40,11 @@ def _unlock_file(handle):
 
 
 class JsonStore:
-    def __init__(self, path, default_factory):
+    def __init__(self, path, default_factory, logger=None, store_name="store"):
         self.path = Path(path)
         self.default_factory = default_factory
+        self.logger = logger
+        self.store_name = str(store_name)
 
     def _read_unlocked(self):
         try:
@@ -49,8 +52,13 @@ class JsonStore:
                 data = json.load(handle)
                 if isinstance(data, dict):
                     return data
-        except (FileNotFoundError, json.JSONDecodeError):
+                self._backup_invalid_file("top-level JSON value was not an object")
+        except FileNotFoundError:
             pass
+        except json.JSONDecodeError as exc:
+            self._backup_invalid_file(f"JSON decode error: {exc}")
+        except OSError as exc:
+            self._log("warning", f"{self.store_name} read failed; using defaults ({exc})")
         return _deepcopy_default(self.default_factory)
 
     def _write_atomic(self, data):
@@ -62,8 +70,22 @@ class JsonStore:
             encoding="utf-8",
         ) as temp_handle:
             json.dump(data, temp_handle, indent=2, ensure_ascii=False)
+            temp_handle.flush()
+            os.fsync(temp_handle.fileno())
             temp_name = temp_handle.name
         os.replace(temp_name, self.path)
+
+    def _lock_path(self):
+        return self.path.with_suffix(self.path.suffix + ".lock")
+
+    def _with_lock(self, callback):
+        lock_path = self._lock_path()
+        with lock_path.open("a+b") as lock_handle:
+            _lock_file(lock_handle)
+            try:
+                return callback()
+            finally:
+                _unlock_file(lock_handle)
 
     def read(self):
         ensure_app_dirs()
@@ -71,17 +93,32 @@ class JsonStore:
 
     def write(self, data):
         ensure_app_dirs()
-        self._write_atomic(data)
+        self._with_lock(lambda: self._write_atomic(data))
 
     def update(self, mutator):
         ensure_app_dirs()
-        lock_path = self.path.with_suffix(self.path.suffix + ".lock")
-        with lock_path.open("a+b") as lock_handle:
-            _lock_file(lock_handle)
-            try:
+        def callback():
                 data = self._read_unlocked()
                 result = mutator(data)
                 self._write_atomic(data)
                 return result
-            finally:
-                _unlock_file(lock_handle)
+
+        return self._with_lock(callback)
+
+    def _backup_invalid_file(self, reason):
+        if not self.path.exists():
+            return
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+        backup_path = self.path.with_name(f"{self.path.stem}.corrupt-{timestamp}{self.path.suffix}")
+        try:
+            os.replace(self.path, backup_path)
+            self._log("warning", f"{self.store_name} was invalid and was backed up to {backup_path.name} ({reason})")
+        except OSError as exc:
+            self._log("warning", f"{self.store_name} was invalid and could not be backed up ({reason}; {exc})")
+
+    def _log(self, level, message):
+        if not self.logger:
+            return
+        log_method = getattr(self.logger, level, None)
+        if callable(log_method):
+            log_method(message)
