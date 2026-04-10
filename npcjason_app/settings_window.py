@@ -21,6 +21,12 @@ class SettingsWindow(tk.Toplevel):
         self.seasonal_options = app.available_seasonal_modes()
         self.seasonal_labels = {option["key"]: option["label"] for option in self.seasonal_options}
         self.seasonal_label_to_key = {option["label"]: option["key"] for option in self.seasonal_options}
+        self.activity_labels = {"low": "Low Activity", "normal": "Normal Activity", "high": "High Activity"}
+        self.activity_label_to_key = {label: key for key, label in self.activity_labels.items()}
+        self.quote_frequency_labels = {"quiet": "Quiet Quotes", "normal": "Normal Quotes", "chatty": "Chatty Quotes"}
+        self.quote_frequency_label_to_key = {label: key for key, label in self.quote_frequency_labels.items()}
+        self.companion_frequency_labels = {"low": "Low Companion", "normal": "Normal Companion", "high": "High Companion"}
+        self.companion_frequency_label_to_key = {label: key for key, label in self.companion_frequency_labels.items()}
 
         self.pet_name_var = tk.StringVar(value=app.pet_name)
         self.skin_var = tk.StringVar(value=self.skin_labels.get(app.skin_key, app.skin_key))
@@ -48,6 +54,9 @@ class SettingsWindow(tk.Toplevel):
         self.seasonal_mode_var = tk.StringVar(
             value=self.seasonal_labels.get(app.seasonal_mode_override, app.seasonal_mode_override)
         )
+        self.activity_level_var = tk.StringVar(value=self.activity_labels.get(app.activity_level, "Normal Activity"))
+        self.quote_frequency_var = tk.StringVar(value=self.quote_frequency_labels.get(app.quote_frequency, "Normal Quotes"))
+        self.companion_frequency_var = tk.StringVar(value=self.companion_frequency_labels.get(app.companion_frequency, "Normal Companion"))
         self.reaction_vars = {
             "usb": tk.BooleanVar(value=app.reaction_toggles.get("usb", True)),
             "battery": tk.BooleanVar(value=app.reaction_toggles.get("battery", True)),
@@ -329,6 +338,41 @@ class SettingsWindow(tk.Toplevel):
                 justify="left",
             ).pack(anchor="w", pady=(4, 0))
 
+        tuning = tk.LabelFrame(parent, text="Behavior Tuning", bg="#f4f1de", fg="#1a1a2e", padx=10, pady=8)
+        tuning.pack(side="left", fill="both", expand=True, padx=(8, 0), pady=8)
+        tk.Label(tuning, text="Activity level", bg="#f4f1de", fg="#1a1a2e").pack(anchor="w")
+        ttk.Combobox(
+            tuning,
+            textvariable=self.activity_level_var,
+            values=list(self.activity_labels.values()),
+            state="readonly",
+            width=24,
+        ).pack(anchor="w", pady=(2, 8))
+        tk.Label(tuning, text="Quote frequency", bg="#f4f1de", fg="#1a1a2e").pack(anchor="w")
+        ttk.Combobox(
+            tuning,
+            textvariable=self.quote_frequency_var,
+            values=list(self.quote_frequency_labels.values()),
+            state="readonly",
+            width=24,
+        ).pack(anchor="w", pady=(2, 8))
+        tk.Label(tuning, text="Companion frequency", bg="#f4f1de", fg="#1a1a2e").pack(anchor="w")
+        ttk.Combobox(
+            tuning,
+            textvariable=self.companion_frequency_var,
+            values=list(self.companion_frequency_labels.values()),
+            state="readonly",
+            width=24,
+        ).pack(anchor="w", pady=(2, 8))
+        tk.Label(
+            tuning,
+            text="Use low activity for a calmer desktop, or turn things up when you want more little bits and sidekick nonsense.",
+            bg="#f4f1de",
+            fg="#4a4e69",
+            justify="left",
+            wraplength=220,
+        ).pack(anchor="w", pady=(8, 0))
+
     def _build_personalize_tab(self, parent):
         left = tk.Frame(parent, bg="#f4f1de")
         left.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
@@ -514,6 +558,9 @@ class SettingsWindow(tk.Toplevel):
             rare_events_enabled=self.rare_events_var.get(),
             chaos_mode=self.chaos_mode_var.get(),
             movement_enabled=self.movement_enabled_var.get(),
+            activity_level=self.activity_label_to_key.get(self.activity_level_var.get(), "normal"),
+            quote_frequency=self.quote_frequency_label_to_key.get(self.quote_frequency_var.get(), "normal"),
+            companion_frequency=self.companion_frequency_label_to_key.get(self.companion_frequency_var.get(), "normal"),
             unlocks_enabled=self.unlocks_enabled_var.get(),
             seasonal_mode_override=self.seasonal_label_to_key.get(self.seasonal_mode_var.get(), "auto"),
             pet_name=self.pet_name_var.get().strip() or self.app.pet_name,

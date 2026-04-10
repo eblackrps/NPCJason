@@ -53,6 +53,9 @@ class GlobalSettings:
     movement_enabled: bool = True
     companion_enabled: bool = True
     selected_companion: str = "mouse"
+    activity_level: str = "normal"
+    quote_frequency: str = "normal"
+    companion_frequency: str = "normal"
     unlocks_enabled: bool = True
     seasonal_mode_override: str = "auto"
     last_active_season: str = ""
@@ -198,6 +201,9 @@ class SettingsService:
             movement_enabled=bool(global_settings.get("movement_enabled", True)),
             companion_enabled=bool(global_settings.get("companion_enabled", True)),
             selected_companion=str(global_settings.get("selected_companion", "mouse")).strip() or "mouse",
+            activity_level=str(global_settings.get("activity_level", "normal")).strip() or "normal",
+            quote_frequency=str(global_settings.get("quote_frequency", "normal")).strip() or "normal",
+            companion_frequency=str(global_settings.get("companion_frequency", "normal")).strip() or "normal",
             unlocks_enabled=bool(global_settings.get("unlocks_enabled", True)),
             seasonal_mode_override=str(global_settings.get("seasonal_mode_override", "auto")).strip() or "auto",
             last_active_season=str(global_settings.get("last_active_season", "")).strip(),
@@ -270,6 +276,9 @@ class SettingsService:
             data["global"]["movement_enabled"] = bool(global_settings.movement_enabled)
             data["global"]["companion_enabled"] = bool(global_settings.companion_enabled)
             data["global"]["selected_companion"] = str(global_settings.selected_companion or "mouse")
+            data["global"]["activity_level"] = str(global_settings.activity_level or "normal")
+            data["global"]["quote_frequency"] = str(global_settings.quote_frequency or "normal")
+            data["global"]["companion_frequency"] = str(global_settings.companion_frequency or "normal")
             data["global"]["unlocks_enabled"] = bool(global_settings.unlocks_enabled)
             data["global"]["seasonal_mode_override"] = str(global_settings.seasonal_mode_override or "auto")
             data["global"]["last_active_season"] = str(global_settings.last_active_season or "")

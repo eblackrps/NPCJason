@@ -97,7 +97,7 @@ class PersistenceTests(unittest.TestCase):
         settings, settings_warnings = sanitize_settings_payload({"schema_version": 1})
         shared_state, shared_warnings = sanitize_shared_state_payload({"schema_version": 99})
 
-        self.assertEqual(6, settings["schema_version"])
+        self.assertEqual(7, settings["schema_version"])
         self.assertEqual(1, shared_state["schema_version"])
         self.assertTrue(any("schema upgraded" in warning for warning in settings_warnings))
         self.assertTrue(any("newer than supported" in warning for warning in shared_warnings))

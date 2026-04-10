@@ -1,0 +1,177 @@
+{
+  "key": "networking-meltdown-helpdesk-chaos",
+  "label": "Networking Meltdown & Helpdesk Chaos",
+  "description": "Networking pain, helpdesk absurdity, and the kind of IT chaos that makes Jason pace on purpose.",
+  "weight": 2,
+  "enabled": true,
+  "categories": [
+    "network",
+    "helpdesk",
+    "office",
+    "chaos"
+  ],
+  "affinity": {
+    "contexts": [
+      "title-ticket",
+      "title-cisco",
+      "title-homelab",
+      "title-networking",
+      "desk-keyboard",
+      "desk-rack",
+      "personality-busy",
+      "personality-annoyed",
+      "notification",
+      "network"
+    ],
+    "categories": [
+      "network",
+      "cisco",
+      "office",
+      "responsible",
+      "helpdesk"
+    ],
+    "tags": [
+      "network",
+      "office",
+      "responsible",
+      "helpdesk"
+    ],
+    "skins": [
+      "network",
+      "office",
+      "homelab",
+      "responsible"
+    ]
+  },
+  "quotes": [
+    {
+      "text": "The ticket says 'internet slow'.\nThat is a genre, not a symptom.",
+      "categories": [
+        "helpdesk",
+        "office"
+      ],
+      "follow_ups": [
+        {
+          "text": "I would also accept literally any detail.",
+          "delay_ms": 1350,
+          "chance": 0.7,
+          "categories": [
+            "helpdesk"
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Someone wrote 'computer broken'.\nExcellent. We have narrowed it down to computers.",
+      "categories": [
+        "helpdesk",
+        "office"
+      ]
+    },
+    {
+      "text": "If the network is 'mostly up,' that means the interesting part is down.",
+      "categories": [
+        "network",
+        "chaos"
+      ],
+      "follow_ups": [
+        {
+          "text": "That is not how up works.",
+          "delay_ms": 1200,
+          "chance": 0.65,
+          "categories": [
+            "network"
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Helpdesk note says 'works for me'.\nA dangerous spell.",
+      "categories": [
+        "helpdesk",
+        "playful"
+      ]
+    },
+    {
+      "text": "Printer ticket opened.\nSpiritually, this is still a networking problem.",
+      "categories": [
+        "office",
+        "network"
+      ],
+      "follow_ups": [
+        {
+          "text": "No one is happy.\nEspecially the printer.",
+          "delay_ms": 1450,
+          "chance": 0.6,
+          "categories": [
+            "office"
+          ]
+        }
+      ]
+    },
+    {
+      "text": "I respect the phrase 'urgent please advise'.\nI do not trust it.",
+      "categories": [
+        "office",
+        "responsible"
+      ]
+    },
+    {
+      "text": "The escalation path is currently just me squinting harder.",
+      "categories": [
+        "helpdesk",
+        "playful"
+      ]
+    },
+    {
+      "text": "Patch panel vibes are deteriorating.",
+      "categories": [
+        "network",
+        "chaos"
+      ]
+    },
+    {
+      "text": "There is a switch somewhere having an emotional event.",
+      "categories": [
+        "network",
+        "chaos"
+      ]
+    },
+    {
+      "text": "I have entered helpdesk chaos.\nSend snacks and logs.",
+      "categories": [
+        "helpdesk",
+        "chaos"
+      ]
+    },
+    {
+      "text": "'{title}' already sounds like a ticket escalation in progress.",
+      "categories": [
+        "title",
+        "helpdesk",
+        "office"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-ticket",
+          "title-code"
+        ]
+      }
+    },
+    {
+      "text": "'{title}' feels like a rack that started blinking on purpose.",
+      "categories": [
+        "title",
+        "network",
+        "chaos"
+      ],
+      "affinity": {
+        "contexts": [
+          "title-cisco",
+          "title-homelab",
+          "title-networking"
+        ]
+      }
+    }
+  ]
+}

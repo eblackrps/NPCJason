@@ -126,6 +126,7 @@ ALLOWED_TEMPLATE_TOKENS = {
     "skin_key",
     "companion",
     "dance_routine",
+    "desk_item",
     "label",
     "percent",
     "title",
@@ -136,12 +137,23 @@ AFFINITY_KEYS = ("skins", "tags", "contexts", "toys", "moods", "packs", "categor
 
 
 @dataclass(frozen=True)
+class FollowUpQuote:
+    text: str
+    delay_ms: int = 1200
+    chance: float = 1.0
+    require_contexts: tuple[str, ...] = ()
+    exclude_contexts: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class QuoteEntry:
     text: str
     moods: tuple[str, ...] = ()
     categories: tuple[str, ...] = ()
     weight: int = 1
     affinity: dict | None = None
+    follow_ups: tuple[FollowUpQuote, ...] = ()
 
     @property
     def normalized_affinity(self):
@@ -172,6 +184,7 @@ class DialogueChoice:
     pack_label: str
     source: str
     categories: tuple[str, ...] = ()
+    follow_ups: tuple[FollowUpQuote, ...] = ()
 
 
 def empty_pool():
@@ -292,19 +305,73 @@ def _normalize_affinity(value, warnings, source_name, field_name):
     return {key: _normalize_string_list(value.get(key, [])) for key in AFFINITY_KEYS}
 
 
-def _build_entry(raw_text, source_name, warnings, moods=None, categories=None, weight=1, affinity=None):
+def _build_follow_up(raw_value, source_name, warnings, base_categories=None):
+    base_categories = tuple(_normalize_string_list(base_categories))
+    if isinstance(raw_value, str):
+        text = str(raw_value)
+        delay_ms = 1200
+        chance = 1.0
+        require_contexts = ()
+        exclude_contexts = ()
+        categories = base_categories
+    elif isinstance(raw_value, dict):
+        text = str(raw_value.get("text", ""))
+        try:
+            delay_ms = max(250, int(raw_value.get("delay_ms", 1200)))
+        except (TypeError, ValueError):
+            warnings.append(f"{source_name}: invalid follow-up delay; defaulting to 1200ms")
+            delay_ms = 1200
+        try:
+            chance = float(raw_value.get("chance", 1.0))
+        except (TypeError, ValueError):
+            warnings.append(f"{source_name}: invalid follow-up chance; defaulting to 1.0")
+            chance = 1.0
+        chance = max(0.0, min(1.0, chance))
+        require_contexts = tuple(_normalize_string_list(raw_value.get("require_contexts", [])))
+        exclude_contexts = tuple(_normalize_string_list(raw_value.get("exclude_contexts", [])))
+        categories = tuple(base_categories + tuple(
+            category for category in _normalize_string_list(raw_value.get("categories", []))
+            if category not in base_categories
+        ))
+    else:
+        warnings.append(f"{source_name}: follow-up entries must be a string or object")
+        return None
+
+    if not text.strip():
+        return None
+    unknown_tokens = unknown_template_tokens(text)
+    if unknown_tokens:
+        warnings.append(f"{source_name}: unknown template token(s) {', '.join(unknown_tokens)}")
+    return FollowUpQuote(
+        text=text,
+        delay_ms=delay_ms,
+        chance=chance,
+        require_contexts=require_contexts,
+        exclude_contexts=exclude_contexts,
+        categories=categories,
+    )
+
+
+def _build_entry(raw_text, source_name, warnings, moods=None, categories=None, weight=1, affinity=None, follow_ups=None):
     text = str(raw_text)
     if not text.strip():
         return None
     unknown_tokens = unknown_template_tokens(text)
     if unknown_tokens:
         warnings.append(f"{source_name}: unknown template token(s) {', '.join(unknown_tokens)}")
+    normalized_categories = tuple(_normalize_string_list(categories))
+    normalized_follow_ups = []
+    for raw_follow_up in list(follow_ups or []):
+        follow_up = _build_follow_up(raw_follow_up, source_name, warnings, base_categories=normalized_categories)
+        if follow_up is not None:
+            normalized_follow_ups.append(follow_up)
     return QuoteEntry(
         text=text,
         moods=tuple(_normalize_string_list(moods)),
-        categories=tuple(_normalize_string_list(categories)),
+        categories=normalized_categories,
         weight=max(1, int(weight)),
         affinity=_normalize_affinity(affinity, warnings, source_name, "entry.affinity"),
+        follow_ups=tuple(normalized_follow_ups),
     )
 
 
@@ -386,6 +453,7 @@ def _parse_json_pack(path):
                 categories=list(categories) + _normalize_string_list(entry.get("categories", [])),
                 weight=entry_weight,
                 affinity=entry.get("affinity"),
+                follow_ups=entry.get("follow_ups", []),
             )
         else:
             warnings.append(f"{path.name}: quote {index} must be a string or object")
@@ -616,6 +684,7 @@ class DialogueLibrary:
                             pack_label=pack.label,
                             source=pack.source,
                             categories=categories,
+                            follow_ups=quote.follow_ups,
                         ),
                         weight,
                     )
@@ -675,6 +744,7 @@ class DialogueLibrary:
                 pack_label="Fallback",
                 source="builtin",
                 categories=("builtin", "fallback"),
+                follow_ups=(),
             )
 
         recent_templates = [str(template) for template in list(recent_templates or [])[-6:]]

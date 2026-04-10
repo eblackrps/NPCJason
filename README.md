@@ -2,22 +2,24 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.6.0`
+> **Current release target:** `v1.7.0`
 
 ---
 
-## What’s New In v1.6.0
+## What’s New In v1.7.0
 
-This release focuses on making NPCJason feel more alive, more situationally funny, and more likely to commit a polished little desktop bit:
+This release gives Jason a stronger sense of desktop place, better layered timing, and more long-session variety without making him noisy:
 
-- A new companion framework with the first real sidekick: a tiny pet mouse that follows Jason around the desktop
-- Feed Cheese interaction with a visible backflip routine and the required post-stunt line: `Ansible Chris made me do it`
-- Three total dance routines now in rotation so dance moments feel like a recurring treat instead of one repeated loop
-- Squarl Suit Jason added as a full first-class skin with proper metadata, offsets, and quote affinity
-- Smarter app-title humor that occasionally reacts to useful foreground titles without feeling creepy or spammy
-- A dedicated Cisco joke pack for networking moods, title observations, and suspiciously smug routing moments
-- Context-aware comedy tuning so title jokes, dances, companion beats, and existing quote packs play together more cleanly
-- Release-pass polish for companion cleanup, title safety, quote timing, and content registration
+- A new desk-item interaction framework so Jason can mess with desktop-adjacent props without everything becoming a toy
+- Three visible desk-item interactions: coffee mug, keyboard, and tiny network rack
+- Structured notification/context reactions that occasionally turn useful title observations into short bits instead of only one-line comments
+- Quote follow-up chaining so some jokes land as mini conversational beats instead of isolated lines
+- Idle micro-actions that add more life during quiet stretches: suspicious checks, keyboard tapping, coffee mug bits, rack checks, and smug doing-nothing moments
+- Skin-linked specialty bias so skins like Astronaut, Network, Office, and Squarl Suit feel more distinct during normal behavior
+- More Jason-and-mouse sidekick interactions including Desk Patrol, Cable Audit, and Victory Scamper
+- A new Networking Meltdown & Helpdesk Chaos content pack
+- Clearer behavior tuning controls for activity level, quote frequency, and companion frequency
+- Runtime polish to keep desk items, quotes, notification reactions, micro-actions, toys, and companion bits from piling on top of each other
 
 ---
 
@@ -35,14 +37,18 @@ This release focuses on making NPCJason feel more alive, more situationally funn
 - Cheese feeding and the mouse backflip routine with the exact `Ansible Chris made me do it` payoff
 - Three dance routines with contextual variety instead of a single repeated dance loop
 - Event reactions for removable drives, low battery, and focused window changes
+- Desk-item framework with coffee mug, keyboard, and tiny network rack interactions
 - Structured quote packs with enable/disable support and repeat suppression
+- Quote follow-up chaining for short secondary punchlines and mini conversational beats
 - App-title humor and Cisco joke packs integrated into the contextual quote system
+- Networking Meltdown & Helpdesk Chaos pack for helpdesk, routing, and patch-panel suffering
 - Context-aware mini-scenarios and gag chains such as Busy IT Morning, Homelab Troubleshooting, Network Victory Lap, Responsible Adult Moment, and Office Chaos
 - Context-aware toy system with tricycle, rubber duck, tiny homelab server cart, and stress ball interactions
 - Lightweight rare-event system for low-frequency special moments
 - Favorites that bias skins, toys, scenarios, and quote packs toward your preferred flavor of desktop menace
 - Unlockable discoveries including bonus quote/scenario content and Astronaut Jason
 - Seasonal and special modes such as April Fools, Patch Day Panic, Homelab Weekend, and Monday Morning Survival
+- Behavior tuning controls for activity level, quote frequency, and companion frequency
 - Optional sound effects with mute and volume control
 - Quiet hours and fullscreen suppression for automatic chatter
 - Custom sayings from `sayings.txt`
@@ -74,7 +80,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.6.0.exe` for the installer
+   - `NPCJason_Setup_1.7.0.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -168,7 +174,7 @@ This installs dependencies from [`pyproject.toml`](./pyproject.toml), runs tests
 build_installer.bat
 ```
 
-This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.5.0.exe`.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.7.0.exe`.
 
 ### Release automation
 
@@ -200,6 +206,8 @@ Publishing a GitHub release triggers [`.github/workflows/release.yml`](./.github
 | `npcjason_app/personality.py` | Personality states, moodful transitions, and quote/movement bias |
 | `npcjason_app/movement.py` | Autonomous desktop movement planning and recovery |
 | `npcjason_app/scenarios.py` | Gag-chain and mini-scenario definitions/runtime |
+| `npcjason_app/desk_items.py` | Desk-item definitions, cooldowns, and runtime prop behavior |
+| `npcjason_app/notifications.py` | Context-reaction rules for title-aware behavior beats |
 | `npcjason_app/seasonal.py` | Seasonal and special-mode activation rules |
 | `npcjason_app/unlocks.py` | Discoveries, unlockables, and progress tracking |
 | `npcjason_app/skins.py` | Frame rendering + skin loading |

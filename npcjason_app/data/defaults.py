@@ -1,4 +1,4 @@
-SETTINGS_SCHEMA_VERSION = 6
+SETTINGS_SCHEMA_VERSION = 7
 SHARED_STATE_SCHEMA_VERSION = 1
 
 MOODS = {
@@ -37,6 +37,9 @@ def default_settings():
             "movement_enabled": True,
             "companion_enabled": True,
             "selected_companion": "mouse",
+            "activity_level": "normal",
+            "quote_frequency": "normal",
+            "companion_frequency": "normal",
             "unlocks_enabled": True,
             "seasonal_mode_override": "auto",
             "last_active_season": "",

@@ -3,6 +3,7 @@ import unittest
 from npcjason_app.tray_controller import (
     TrayCompanionInteractionOption,
     TrayCompanionOption,
+    TrayDeskItemOption,
     TrayPetOption,
     TrayQuotePackOption,
     TrayScenarioOption,
@@ -31,6 +32,10 @@ class TrayControllerTests(unittest.TestCase):
             companion_state_label="Waiting",
             unlocks_enabled=False,
             active_toy_label="Rubber Duck",
+            active_desk_item_label="Coffee Mug",
+            activity_level="high",
+            quote_frequency="chatty",
+            companion_frequency="low",
             skin_options=[
                 TraySkinOption(key="jason", label="Classic Jason"),
                 TraySkinOption(key="wizard", label="Wizard Jason"),
@@ -42,6 +47,7 @@ class TrayControllerTests(unittest.TestCase):
                 TrayCompanionInteractionOption(key="feed-cheese", label="Feed Cheese", cooldown_ms=0, active=False),
             ],
             toy_options=[TrayToyOption(key="rubber-duck", label="Rubber Duck", cooldown_ms=0, active=True)],
+            desk_item_options=[TrayDeskItemOption(key="coffee-mug", label="Coffee Mug", cooldown_ms=0, active=False)],
             quote_packs=[TrayQuotePackOption(key="jason-quotes", label="Jason Quote Pack", enabled=True)],
             scenario_options=[TrayScenarioOption(key="office-chaos", label="Office Chaos", cooldown_ms=0, active=False)],
             seasonal_options=[TraySeasonOption(key="monday-morning-survival", label="Monday Morning Survival", active=True)],
@@ -59,6 +65,7 @@ class TrayControllerTests(unittest.TestCase):
         self.assertFalse(snapshot["sound_enabled"])
         self.assertTrue(snapshot["auto_start_enabled"])
         self.assertEqual(["Rubber Duck"], snapshot["toy_labels"])
+        self.assertEqual(["Coffee Mug"], snapshot["desk_item_labels"])
         self.assertEqual(["Jason Quote Pack"], snapshot["quote_packs"])
         self.assertEqual(["Office Chaos"], snapshot["scenario_labels"])
         self.assertTrue(snapshot["companion_enabled"])
@@ -71,6 +78,9 @@ class TrayControllerTests(unittest.TestCase):
         self.assertTrue(snapshot["chaos_mode"])
         self.assertFalse(snapshot["movement_enabled"])
         self.assertFalse(snapshot["unlocks_enabled"])
+        self.assertEqual("high", snapshot["activity_level"])
+        self.assertEqual("chatty", snapshot["quote_frequency"])
+        self.assertEqual("low", snapshot["companion_frequency"])
 
 
 if __name__ == "__main__":

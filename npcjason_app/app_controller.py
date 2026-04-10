@@ -16,9 +16,11 @@ from .animation import AnimationController
 from .companions import CompanionManager
 from .coordination import PresenceRecord, PetCoordinator
 from .data.defaults import MOODS, default_settings, default_shared_state
+from .desk_items import DeskItemManager
 from .diagnostics import DiagnosticsLogger
-from .dialogue import DialogueLibrary, PET_CONVERSATIONS, render_template
+from .dialogue import DialogueLibrary, PET_CONVERSATIONS, FollowUpQuote, render_template
 from .movement import MovementController
+from .notifications import pick_notification_reaction
 from .paths import RESOURCE_DIR, SETTINGS_PATH, SHARED_STATE_PATH
 from .pet_window import PetWindow
 from .personality import PersonalityController
@@ -44,6 +46,7 @@ from .toys import ToyManager
 from .tray_controller import (
     TrayCompanionInteractionOption,
     TrayCompanionOption,
+    TrayDeskItemOption,
     TrayActions,
     TrayController,
     TrayPetOption,
@@ -83,6 +86,7 @@ PERSONALITY_TICK_RANGE_MS = (3500, 6500)
 MOVEMENT_TICK_MS = 140
 SCENARIO_TICK_MS = 150
 CONTINUITY_TICK_MS = 60 * 1000
+IDLE_MICRO_ACTION_RANGE_MS = (14 * 1000, 28 * 1000)
 
 
 class NPCJasonApp:
@@ -103,6 +107,7 @@ class NPCJasonApp:
         self.personality = PersonalityController(logger=self.logger)
         self.companion_manager = CompanionManager(self.root, logger=self.logger)
         self.toy_manager = ToyManager(self.root, logger=self.logger)
+        self.desk_item_manager = DeskItemManager(self.root, logger=self.logger)
         self.rare_event_manager = RareEventManager(logger=self.logger)
         self.scenario_manager = ScenarioManager(logger=self.logger)
         self.unlock_manager = UnlockManager(logger=self.logger)
@@ -157,6 +162,9 @@ class NPCJasonApp:
         self.movement_enabled = True
         self.companion_enabled = True
         self.selected_companion_key = "mouse"
+        self.activity_level = "normal"
+        self.quote_frequency = "normal"
+        self.companion_frequency = "normal"
         self.unlocks_enabled = True
         self.seasonal_mode_override = "auto"
         self.last_active_season = ""
@@ -171,6 +179,11 @@ class NPCJasonApp:
         self._last_title_joke_at = 0.0
         self._last_title_reaction_key = ""
         self._ride_origin_position = None
+        self._last_notification_reaction_at = 0.0
+        self._last_notification_reaction_key = ""
+        self._last_idle_micro_action_key = ""
+        self._last_idle_micro_action_at = 0.0
+        self._speech_serial = 0
 
         self.canvas = self.window.canvas
         self._load_settings()
@@ -223,6 +236,9 @@ class NPCJasonApp:
         self.movement_enabled = bool(global_settings.movement_enabled)
         self.companion_enabled = bool(global_settings.companion_enabled)
         self.selected_companion_key = str(global_settings.selected_companion or "mouse")
+        self.activity_level = str(global_settings.activity_level or "normal")
+        self.quote_frequency = str(global_settings.quote_frequency or "normal")
+        self.companion_frequency = str(global_settings.companion_frequency or "normal")
         self.unlocks_enabled = bool(global_settings.unlocks_enabled)
         self.seasonal_mode_override = str(global_settings.seasonal_mode_override or "auto")
         self.last_active_season = str(global_settings.last_active_season or "")
@@ -362,6 +378,13 @@ class NPCJasonApp:
             owner="behavior",
         )
         self.scheduler.schedule_loop(
+            "desk_item_tick",
+            self._desk_item_tick,
+            initial_delay_ms=0,
+            default_delay_ms=120,
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
             "companion_tick",
             self._companion_tick,
             initial_delay_ms=600,
@@ -408,6 +431,13 @@ class NPCJasonApp:
             self._continuity_tick,
             initial_delay_ms=CONTINUITY_TICK_MS,
             default_delay_ms=CONTINUITY_TICK_MS,
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
+            "idle_micro_action",
+            self._idle_micro_action_tick,
+            initial_delay_ms=self._random_idle_micro_action_delay(),
+            default_delay_ms=IDLE_MICRO_ACTION_RANGE_MS[0],
             owner="behavior",
         )
         self.scheduler.schedule_loop(
@@ -471,10 +501,14 @@ class NPCJasonApp:
                 trigger_companion_interaction=self._trigger_companion_interaction_from_menu,
                 toggle_unlocks=self._toggle_unlocks_enabled,
                 trigger_toy=self._trigger_toy_from_menu,
+                trigger_desk_item=self._trigger_desk_item_from_menu,
                 trigger_quote=lambda: self._show_saying(True),
                 toggle_quote_pack=self._toggle_quote_pack,
                 trigger_scenario=self._trigger_scenario_from_menu,
                 set_seasonal_mode=self._set_seasonal_mode,
+                set_activity_level=self._set_activity_level,
+                set_quote_frequency=self._set_quote_frequency,
+                set_companion_frequency=self._set_companion_frequency,
                 bring_back=self.bring_back_on_screen,
                 check_updates=self.check_for_updates_manual,
                 open_releases=self._open_releases_page,
@@ -741,6 +775,68 @@ class NPCJasonApp:
                 return item["label"]
         return active_key
 
+    def _active_desk_item_label(self, item_key=None):
+        active_key = item_key or self.desk_item_manager.active_item_key()
+        if not active_key:
+            return ""
+        for item in self.available_desk_items():
+            if item["key"] == active_key:
+                return item["label"]
+        return active_key
+
+    def _activity_multiplier(self):
+        return {
+            "low": 1.35,
+            "normal": 1.0,
+            "high": 0.72,
+        }.get(str(self.activity_level or "normal"), 1.0)
+
+    def _quote_delay_multiplier(self):
+        return {
+            "quiet": 1.45,
+            "normal": 1.0,
+            "chatty": 0.74,
+        }.get(str(self.quote_frequency or "normal"), 1.0)
+
+    def _companion_frequency_multiplier(self):
+        return {
+            "low": 0.7,
+            "normal": 1.0,
+            "high": 1.35,
+        }.get(str(self.companion_frequency or "normal"), 1.0)
+
+    def _skin_specialty_context(self):
+        contexts = []
+        categories = []
+        desk_item_bonus = {}
+        companion_bonus = {}
+        if "astronaut" in self.skin_tags:
+            contexts.extend(["skin-specialty", "astronaut-specialty"])
+            categories.extend(["playful", "homelab"])
+            desk_item_bonus["tiny-network-rack"] = 4
+            companion_bonus["desk-patrol"] = 2
+        if "network" in self.skin_tags:
+            contexts.extend(["skin-specialty", "network-specialty"])
+            categories.extend(["network", "cisco"])
+            desk_item_bonus["tiny-network-rack"] = desk_item_bonus.get("tiny-network-rack", 0) + 6
+            companion_bonus["cable-audit"] = companion_bonus.get("cable-audit", 0) + 4
+        if "office" in self.skin_tags or "responsible" in self.skin_tags:
+            contexts.extend(["skin-specialty", "office-specialty"])
+            categories.extend(["office", "responsible"])
+            desk_item_bonus["keyboard"] = desk_item_bonus.get("keyboard", 0) + 4
+            desk_item_bonus["coffee-mug"] = desk_item_bonus.get("coffee-mug", 0) + 2
+        if "squarl" in self.skin_tags or "suit" in self.skin_tags:
+            contexts.extend(["skin-specialty", "squarl-specialty"])
+            categories.extend(["playful", "smug"])
+            desk_item_bonus["coffee-mug"] = desk_item_bonus.get("coffee-mug", 0) + 3
+            companion_bonus["victory-scamper"] = companion_bonus.get("victory-scamper", 0) + 2
+        return {
+            "contexts": self._dedupe(contexts),
+            "categories": self._dedupe(categories),
+            "desk_item_bonus": desk_item_bonus,
+            "companion_bonus": companion_bonus,
+        }
+
     def _sayings_context(self, overrides=None):
         now = datetime.now()
         battery = self.last_battery_snapshot or get_battery_snapshot() or {}
@@ -758,6 +854,7 @@ class NPCJasonApp:
             "skin": self.skin_metadata().get("label", self.skin_key),
             "skin_key": self.skin_key,
             "toy": self._active_toy_label(),
+            "desk_item": self._active_desk_item_label(),
             "companion": active_companion,
             "dance_routine": self.last_dance_routine_key or "classic-bounce",
         }
@@ -768,12 +865,15 @@ class NPCJasonApp:
     def _quote_selection_context(self, extra_contexts=None, extra_categories=None, extra_packs=None, toy_key=None):
         seasonal = self._seasonal_context()
         bias = self._active_comedy_bias()
+        specialty = self._skin_specialty_context()
         contexts = self._dedupe(self.skin_quote_affinity.get("contexts", []))
         contexts.extend(context for context in self.personality.quote_contexts() if context not in contexts)
         contexts.extend(context for context in self._dedupe(extra_contexts) if context not in contexts)
         contexts.extend(context for context in self.toy_manager.active_contexts() if context not in contexts)
+        contexts.extend(context for context in self.desk_item_manager.active_contexts() if context not in contexts)
         contexts.extend(context for context in self.companion_manager.active_contexts() if context not in contexts)
         contexts.extend(context for context in seasonal.get("contexts", []) if context not in contexts)
+        contexts.extend(context for context in specialty.get("contexts", []) if context not in contexts)
         contexts.extend(context for context in bias.get("contexts", []) if context not in contexts)
 
         preferred_categories = self._dedupe(self.skin_quote_affinity.get("categories", []))
@@ -787,10 +887,16 @@ class NPCJasonApp:
             tag for tag in self.toy_manager.active_tags() if tag not in preferred_categories
         )
         preferred_categories.extend(
+            tag for tag in self.desk_item_manager.active_tags() if tag not in preferred_categories
+        )
+        preferred_categories.extend(
             tag for tag in self.companion_manager.active_tags() if tag not in preferred_categories
         )
         preferred_categories.extend(
             category for category in seasonal.get("preferred_skin_tags", []) if category not in preferred_categories
+        )
+        preferred_categories.extend(
+            category for category in specialty.get("categories", []) if category not in preferred_categories
         )
         preferred_categories.extend(
             category for category in bias.get("categories", []) if category not in preferred_categories
@@ -817,6 +923,7 @@ class NPCJasonApp:
             "preferred_categories": preferred_categories,
             "preferred_packs": preferred_packs,
             "toy": toy_key or self.toy_manager.active_toy_key() or "",
+            "desk_item": self.desk_item_manager.active_item_key() or "",
         }
 
     def _recent_templates(self):
@@ -1030,10 +1137,57 @@ class NPCJasonApp:
             self.logger.exception("Failed to create speech bubble")
             return False
 
+        self._speech_serial += 1
         self.last_speech_at = time.time()
         self._play_effect("speech", category="speech", throttle_ms=350, throttle_key="speech")
         self._record_saying(template_text or text, text, source)
         return True
+
+    def _follow_up_allowed(self, follow_up, render_context):
+        if not isinstance(follow_up, FollowUpQuote):
+            return False
+        active_contexts = set(self._quote_selection_context().get("contexts", []))
+        if follow_up.require_contexts and not set(follow_up.require_contexts).issubset(active_contexts):
+            return False
+        if follow_up.exclude_contexts and active_contexts & set(follow_up.exclude_contexts):
+            return False
+        if float(follow_up.chance) < 1.0 and random.random() > float(follow_up.chance):
+            return False
+        rendered = render_template(follow_up.text, render_context)
+        if rendered in self.recent_saying_texts():
+            return False
+        return True
+
+    def _queue_follow_ups(self, follow_ups, render_context, source, speech_serial):
+        for index, follow_up in enumerate(tuple(follow_ups or ())):
+            if not self._follow_up_allowed(follow_up, render_context):
+                continue
+
+            def deliver(target=follow_up, serial=speech_serial, follow_up_index=index):
+                if self.is_quitting:
+                    return
+                if serial != self._speech_serial:
+                    return
+                if self.scenario_manager.active_scenario_key() or self.animation.is_dancing:
+                    return
+                if not self._automatic_actions_allowed():
+                    return
+                rendered_text = render_template(target.text, render_context)
+                if rendered_text in self.recent_saying_texts():
+                    return
+                self._show_text(
+                    rendered_text,
+                    source=f"{source}:follow-up",
+                    template_text=target.text,
+                )
+                self.logger.info(f"speech follow-up delivered: {follow_up_index} from {source}")
+
+            self.scheduler.schedule(
+                f"speech_follow_up_{speech_serial}_{index}",
+                max(250, int(follow_up.delay_ms)),
+                deliver,
+                owner="speech",
+            )
 
     def _show_saying(
         self,
@@ -1066,22 +1220,37 @@ class NPCJasonApp:
             choice.template,
             render_context,
         )
-        return self._show_text(
+        shown = self._show_text(
             rendered,
             reveal_if_hidden,
             source=f"{source}:{choice.pack_key}",
             template_text=choice.template,
         )
+        if shown and choice.follow_ups:
+            self._queue_follow_ups(
+                choice.follow_ups,
+                render_context,
+                source=f"{source}:{choice.pack_key}",
+                speech_serial=self._speech_serial,
+            )
+        return shown
 
     def _random_saying_tick(self):
+        min_gap = {
+            "quiet": 30,
+            "normal": 20,
+            "chatty": 14,
+        }.get(str(self.quote_frequency or "normal"), 20)
         if (
-            self._can_speak(20)
+            self._can_speak(min_gap)
             and self.reaction_toggles.get("random_sayings", True)
             and self._automatic_actions_allowed()
             and not self.companion_manager.blocks_owner_movement()
         ):
             self._show_saying()
-        return self._random_delay(RANDOM_SAYING_RANGE_MS)
+        minimum, maximum = RANDOM_SAYING_RANGE_MS
+        scale = self._quote_delay_multiplier()
+        return int(self._random_delay((minimum, maximum)) * scale)
 
     def _rotate_mood(self):
         if self.is_quitting:
@@ -1121,6 +1290,14 @@ class NPCJasonApp:
             item["favorite"] = self._is_favorite("toy", toy["key"])
             toys.append(item)
         return toys
+
+    def available_desk_items(self):
+        items = []
+        for desk_item in self.desk_item_manager.available_items():
+            item = dict(desk_item)
+            item["favorite"] = False
+            items.append(item)
+        return items
 
     def available_companions(self):
         return self.companion_manager.available_companions()
@@ -1218,6 +1395,34 @@ class NPCJasonApp:
         self._refresh_tray()
         return True
 
+    def _set_activity_level(self, level):
+        normalized = str(level or "normal").strip().lower()
+        if normalized not in {"low", "normal", "high"}:
+            return False
+        self.activity_level = normalized
+        self._schedule_auto_antics()
+        self._schedule_settings_save()
+        self._refresh_tray()
+        return True
+
+    def _set_quote_frequency(self, level):
+        normalized = str(level or "normal").strip().lower()
+        if normalized not in {"quiet", "normal", "chatty"}:
+            return False
+        self.quote_frequency = normalized
+        self._schedule_settings_save()
+        self._refresh_tray()
+        return True
+
+    def _set_companion_frequency(self, level):
+        normalized = str(level or "normal").strip().lower()
+        if normalized not in {"low", "normal", "high"}:
+            return False
+        self.companion_frequency = normalized
+        self._schedule_settings_save()
+        self._refresh_tray()
+        return True
+
     def _toggle_rare_events_enabled(self):
         self.rare_events_enabled = not self.rare_events_enabled
         self._schedule_rare_events()
@@ -1296,6 +1501,9 @@ class NPCJasonApp:
         rare_events_enabled,
         chaos_mode,
         movement_enabled,
+        activity_level,
+        quote_frequency,
+        companion_frequency,
         unlocks_enabled,
         seasonal_mode_override,
         pet_name,
@@ -1321,6 +1529,15 @@ class NPCJasonApp:
         self.rare_events_enabled = bool(rare_events_enabled)
         self.chaos_mode = bool(chaos_mode)
         self.movement_enabled = bool(movement_enabled)
+        self.activity_level = str(activity_level or "normal").strip().lower() or "normal"
+        if self.activity_level not in {"low", "normal", "high"}:
+            self.activity_level = "normal"
+        self.quote_frequency = str(quote_frequency or "normal").strip().lower() or "normal"
+        if self.quote_frequency not in {"quiet", "normal", "chatty"}:
+            self.quote_frequency = "normal"
+        self.companion_frequency = str(companion_frequency or "normal").strip().lower() or "normal"
+        if self.companion_frequency not in {"low", "normal", "high"}:
+            self.companion_frequency = "normal"
         self.unlocks_enabled = bool(unlocks_enabled)
         self.seasonal_mode_override = str(seasonal_mode_override or "auto").strip() or "auto"
         self.pet_name = str(pet_name or self.pet_name)
@@ -1394,11 +1611,17 @@ class NPCJasonApp:
     def _random_auto_antics_delay(self):
         minimum = max(1, min(self.auto_antics_min_minutes, self.auto_antics_max_minutes))
         maximum = max(minimum, max(self.auto_antics_min_minutes, self.auto_antics_max_minutes))
-        return random.randint(minimum * 60 * 1000, maximum * 60 * 1000)
+        multiplier = self._activity_multiplier()
+        return int(random.randint(minimum * 60 * 1000, maximum * 60 * 1000) * multiplier)
 
     def _random_rare_event_delay(self):
         delay_range = (5 * 60 * 1000, 11 * 60 * 1000) if self.chaos_mode else RARE_EVENT_RANGE_MS
         return self._random_delay(delay_range)
+
+    def _random_idle_micro_action_delay(self):
+        minimum, maximum = IDLE_MICRO_ACTION_RANGE_MS
+        multiplier = self._activity_multiplier()
+        return int(random.randint(minimum, maximum) * multiplier)
 
     def _schedule_auto_antics(self):
         self.scheduler.cancel("auto_antics")
@@ -1427,7 +1650,7 @@ class NPCJasonApp:
     def _auto_antics_tick(self):
         if self.is_quitting:
             return None
-        if self.auto_antics_enabled and self._automatic_actions_allowed() and self._can_speak(14) and not self.companion_manager.blocks_owner_movement():
+        if self.auto_antics_enabled and self._automatic_actions_allowed() and self._can_speak(14) and not self.companion_manager.blocks_owner_movement() and not self.desk_item_manager.active_item_key():
             if not self.scenario_manager.active_scenario_key() and random.randint(1, 100) <= (28 if self.chaos_mode else 18):
                 if self._trigger_random_scenario(source="auto-antics"):
                     return self._random_auto_antics_delay()
@@ -1448,6 +1671,7 @@ class NPCJasonApp:
             or not self._automatic_actions_allowed()
             or not self._can_speak(18)
             or self.companion_manager.blocks_owner_movement()
+            or self.desk_item_manager.active_item_key()
         ):
             return self._random_rare_event_delay()
         if not self.scenario_manager.active_scenario_key() and random.randint(1, 100) <= (62 if self.chaos_mode else 42):
@@ -1503,11 +1727,93 @@ class NPCJasonApp:
                 return toy_key
         return weighted[-1][0]
 
+    def _preferred_desk_item_key(self):
+        weighted = []
+        preferred_categories = set(self.skin_quote_affinity.get("categories", [])) | set(self.personality.preferred_categories())
+        specialty = self._skin_specialty_context()
+        active_bias = self._active_comedy_bias()
+        active_contexts = set(active_bias.get("contexts", []))
+        active_categories = set(active_bias.get("categories", []))
+        for item in self.available_desk_items():
+            if item["cooldown_ms"] > 0 or item["active"]:
+                continue
+            weight = 1
+            item_tags = set(item.get("tags", []))
+            item_contexts = set(item.get("contexts", []))
+            if preferred_categories & item_tags:
+                weight += 3
+            if active_categories & item_tags:
+                weight += 2
+            if active_contexts & item_contexts:
+                weight += 3
+            weight += int(specialty.get("desk_item_bonus", {}).get(item["key"], 0))
+            if self.personality.current_state() in {"busy", "annoyed"} and item["key"] == "keyboard":
+                weight += 4
+            if self.personality.current_state() in {"curious", "confused"} and item["key"] == "tiny-network-rack":
+                weight += 4
+            if self.mood == "tired" and item["key"] == "coffee-mug":
+                weight += 3
+            weighted.append((item["key"], weight))
+        if not weighted:
+            return None
+        total = sum(weight for _key, weight in weighted)
+        pick = random.uniform(0, total)
+        current = 0.0
+        for item_key, weight in weighted:
+            current += weight
+            if pick <= current:
+                return item_key
+        return weighted[-1][0]
+
+    def _preferred_companion_interaction_key(self, automatic=False):
+        if not self.companion_enabled:
+            return None
+        weighted = []
+        specialty = self._skin_specialty_context()
+        personality_state = self.personality.current_state()
+        active_bias = self._active_comedy_bias()
+        contexts = set(active_bias.get("contexts", []))
+        categories = set(active_bias.get("categories", []))
+        for interaction in self.available_companion_interactions():
+            key = interaction["key"]
+            if interaction["cooldown_ms"] > 0 or interaction["active"]:
+                continue
+            if automatic and key == "feed-cheese":
+                continue
+            weight = 1
+            interaction_tags = set(interaction.get("tags", []))
+            interaction_contexts = set(interaction.get("contexts", []))
+            if contexts & interaction_contexts:
+                weight += 3
+            if categories & interaction_tags:
+                weight += 2
+            weight += int(specialty.get("companion_bonus", {}).get(key, 0))
+            if personality_state in {"curious", "confused"} and key in {"desk-patrol", "cable-audit"}:
+                weight += 3
+            if personality_state in {"celebrating", "smug"} and key == "victory-scamper":
+                weight += 4
+            if personality_state in {"busy", "annoyed"} and key == "desk-patrol":
+                weight += 2
+            weighted.append((key, max(1, int(weight))))
+        if not weighted:
+            return None
+        total = sum(weight for _key, weight in weighted)
+        pick = random.uniform(0, total)
+        current = 0.0
+        for interaction_key, weight in weighted:
+            current += weight
+            if pick <= current:
+                return interaction_key
+        return weighted[-1][0]
+
     def _trigger_random_toy(self, source="toy-auto", reveal_if_hidden=False):
         toy_key = self._preferred_toy_key()
         if not toy_key:
             return False
         return self._trigger_toy(toy_key, reveal_if_hidden=reveal_if_hidden, show_saying=True, source=source)
+
+    def _trigger_desk_item_from_menu(self, item_key):
+        self._trigger_desk_item(item_key, reveal_if_hidden=True, show_saying=True, source="desk-item-manual")
 
     def _trigger_companion_interaction(self, interaction_key, reveal_if_hidden=False, source="companion"):
         if self.is_quitting or not interaction_key:
@@ -1525,7 +1831,11 @@ class NPCJasonApp:
         if not result.started:
             if reveal_if_hidden and result.reason == "cooldown":
                 seconds = max(1, int(result.remaining_cooldown_ms / 1000))
-                self._show_text(f"Mouse is still processing that cheese.\nTry again in {seconds}s.")
+                interaction_label = next(
+                    (item["label"] for item in self.available_companion_interactions() if item["key"] == interaction_key),
+                    "That mouse bit",
+                )
+                self._show_text(f"{interaction_label} is cooling down.\nTry again in {seconds}s.")
             elif reveal_if_hidden and result.reason == "busy":
                 self._show_text("The mouse is already doing a whole bit.\nGive it a second.")
             return False
@@ -1538,6 +1848,64 @@ class NPCJasonApp:
         )
         self._schedule_settings_save()
         self._refresh_tray()
+        return True
+
+    def _trigger_desk_item(
+        self,
+        item_key,
+        reveal_if_hidden=False,
+        show_saying=False,
+        source="desk-item",
+        extra_contexts=None,
+        extra_categories=None,
+        extra_packs=None,
+    ):
+        if self.is_quitting or not item_key:
+            return False
+        if self._root_is_hidden():
+            if reveal_if_hidden:
+                self.window.show()
+                self.runtime_state.set_visibility(False)
+            else:
+                return False
+        result = self.desk_item_manager.trigger(
+            item_key,
+            self.window_x,
+            self.window_y,
+            self.window.work_area(),
+            skin_offsets=self.skin_accessory_offsets,
+        )
+        if not result.started:
+            if reveal_if_hidden and result.reason == "cooldown":
+                seconds = max(1, int(result.remaining_cooldown_ms / 1000))
+                self._show_text(f"{self._active_desk_item_label(item_key)} is cooling down.\nTry again in {seconds}s.")
+            elif reveal_if_hidden and result.reason == "busy":
+                self._show_text("That desk prop is already doing a whole thing.\nGive it a second.")
+            return False
+        state_map = {
+            "coffee-mug": "busy",
+            "keyboard": "busy",
+            "tiny-network-rack": "curious",
+        }
+        if item_key in state_map:
+            self._set_personality_state(state_map[item_key], reason=f"desk-item:{item_key}", duration_ms=3_800)
+        self._set_comedy_bias(
+            contexts=list(result.contexts),
+            categories=list(result.tags),
+            packs=list(extra_packs or []),
+            duration_ms=12_000,
+            label=f"{source}:{item_key}",
+        )
+        self._play_effect(result.sound_effect, category="toy", throttle_ms=2400, throttle_key=f"desk-item:{item_key}")
+        self._refresh_tray()
+        if show_saying and self._can_speak(4):
+            self._show_saying(
+                reveal_if_hidden=reveal_if_hidden,
+                source=source,
+                extra_contexts=list(extra_contexts or []) + list(result.contexts),
+                extra_categories=list(extra_categories or []) + list(result.tags),
+                extra_packs=list(extra_packs or []),
+            )
         return True
 
     def _trigger_toy(
@@ -1611,10 +1979,23 @@ class NPCJasonApp:
             self._refresh_tray()
         return result.next_delay_ms
 
+    def _desk_item_tick(self):
+        if self.is_quitting:
+            return None
+        result = self.desk_item_manager.tick(
+            hidden=self._root_is_hidden(),
+            owner_x=self.window_x,
+            owner_y=self.window_y,
+        )
+        if result.finished_item:
+            self._refresh_tray()
+        return result.next_delay_ms
+
     def _companion_runtime_context(self):
         return {
             "personality_state": self.personality.current_state(),
             "active_toy": self.toy_manager.active_toy_key() or "",
+            "active_desk_item": self.desk_item_manager.active_item_key() or "",
             "active_scenario": self.scenario_manager.active_scenario_key(),
             "mood": self.mood,
         }
@@ -1653,6 +2034,7 @@ class NPCJasonApp:
             "mood": self.mood,
             "chaos_mode": self.chaos_mode,
             "active_toy": self.toy_manager.active_toy_key() or "",
+            "active_desk_item": self.desk_item_manager.active_item_key() or "",
             "recent_scenarios": list(self.scenario_manager.recent_history()),
             "seasonal_contexts": seasonal.get("contexts", []),
             "active_scenario": self.scenario_manager.active_scenario_key(),
@@ -1676,6 +2058,208 @@ class NPCJasonApp:
         self._flush_discovery_notifications(reveal_if_hidden=False)
         return self._random_delay(PERSONALITY_TICK_RANGE_MS)
 
+    def _idle_micro_action_definitions(self):
+        return [
+            {
+                "key": "suspicious-check",
+                "state": "curious",
+                "weight": 3,
+                "movement_style": "inspect",
+                "focus": random.choice(["left-edge", "right-edge", "top-right", "bottom-left"]),
+                "contexts": ["micro-action", "suspicious-check", "curious"],
+                "categories": ["what-do", "playful"],
+                "quote_chance": 0.22,
+            },
+            {
+                "key": "stretch-routine",
+                "state": "exhausted",
+                "weight": 2,
+                "movement_style": "slump",
+                "contexts": ["micro-action", "stretch-routine"],
+                "categories": ["responsible"],
+                "quote_chance": 0.0,
+            },
+            {
+                "key": "keyboard-tap",
+                "state": "busy",
+                "weight": 4,
+                "desk_item": "keyboard",
+                "contexts": ["micro-action", "keyboard-tap"],
+                "categories": ["office", "helpdesk"],
+                "packs": ["networking-meltdown-helpdesk-chaos"],
+                "quote_chance": 0.34,
+            },
+            {
+                "key": "coffee-sip",
+                "state": "busy",
+                "weight": 3,
+                "desk_item": "coffee-mug",
+                "contexts": ["micro-action", "coffee-break"],
+                "categories": ["office", "playful"],
+                "quote_chance": 0.26,
+            },
+            {
+                "key": "rack-check",
+                "state": "curious",
+                "weight": 3,
+                "desk_item": "tiny-network-rack",
+                "contexts": ["micro-action", "rack-check", "network"],
+                "categories": ["network", "homelab"],
+                "packs": ["networking-meltdown-helpdesk-chaos", "cisco-jokes"],
+                "quote_chance": 0.4,
+            },
+            {
+                "key": "inspect-mouse",
+                "state": "curious",
+                "weight": 2,
+                "companion_interaction": "desk-patrol",
+                "contexts": ["micro-action", "mouse-sidekick"],
+                "categories": ["playful"],
+                "quote_chance": 0.18,
+            },
+            {
+                "key": "cable-audit",
+                "state": "curious",
+                "weight": 2,
+                "companion_interaction": "cable-audit",
+                "contexts": ["micro-action", "network", "mouse-sidekick"],
+                "categories": ["network", "cisco"],
+                "packs": ["cisco-jokes", "networking-meltdown-helpdesk-chaos"],
+                "quote_chance": 0.24,
+            },
+            {
+                "key": "proud-of-nothing",
+                "state": "smug",
+                "weight": 2,
+                "contexts": ["micro-action", "smug"],
+                "categories": ["playful", "smug"],
+                "quote_chance": 0.5,
+            },
+            {
+                "key": "victory-scamper",
+                "state": "celebrating",
+                "weight": 1,
+                "companion_interaction": "victory-scamper",
+                "contexts": ["micro-action", "victory", "mouse-sidekick"],
+                "categories": ["celebrating", "playful"],
+                "quote_chance": 0.16,
+            },
+        ]
+
+    def _automatic_idle_micro_actions_allowed(self):
+        return (
+            self.auto_antics_enabled
+            and self._automatic_actions_allowed()
+            and not self._root_is_hidden()
+            and not self.dragging
+            and (time.time() - self.last_speech_at) >= 6
+            and not self.animation.is_dancing
+            and not self.scenario_manager.active_scenario_key()
+            and not self.toy_manager.active_toy_key()
+            and not self.desk_item_manager.active_item_key()
+            and not self.companion_manager.active_interaction_key()
+            and not self.companion_manager.blocks_owner_movement()
+        )
+
+    def _pick_idle_micro_action(self):
+        specialty = self._skin_specialty_context()
+        current_state = self.personality.current_state()
+        available_companion_keys = {item["key"] for item in self.available_companion_interactions() if item["cooldown_ms"] <= 0 and not item["active"]}
+        available_desk_item_keys = {item["key"] for item in self.available_desk_items() if item["cooldown_ms"] <= 0 and not item["active"]}
+        weighted = []
+        for action in self._idle_micro_action_definitions():
+            if action.get("desk_item") and action["desk_item"] not in available_desk_item_keys:
+                continue
+            if action.get("companion_interaction"):
+                if not self.companion_enabled or action["companion_interaction"] not in available_companion_keys:
+                    continue
+            weight = int(action.get("weight", 1))
+            if action["key"] == self._last_idle_micro_action_key:
+                weight = max(1, weight - 2)
+            if current_state == action.get("state"):
+                weight += 2
+            if self.mood == "tired" and action["key"] == "coffee-sip":
+                weight += 3
+            if "network" in self.skin_tags and action["key"] in {"rack-check", "cable-audit"}:
+                weight += 4
+            if "astronaut" in self.skin_tags and action["key"] in {"suspicious-check", "rack-check"}:
+                weight += 2
+            if ("squarl" in self.skin_tags or "suit" in self.skin_tags) and action["key"] == "proud-of-nothing":
+                weight += 5
+            if action.get("desk_item"):
+                weight += int(specialty.get("desk_item_bonus", {}).get(action["desk_item"], 0))
+            if action.get("companion_interaction"):
+                weight += int(specialty.get("companion_bonus", {}).get(action["companion_interaction"], 0))
+                weight = int(weight * self._companion_frequency_multiplier())
+            weighted.append((action, max(1, weight)))
+        if not weighted:
+            return None
+        total = sum(weight for _action, weight in weighted)
+        pick = random.uniform(0, total)
+        current = 0.0
+        for action, weight in weighted:
+            current += weight
+            if pick <= current:
+                return action
+        return weighted[-1][0]
+
+    def _run_idle_micro_action(self, action):
+        if not action:
+            return False
+        anything_started = False
+        if action.get("state"):
+            anything_started = self._set_personality_state(
+                action["state"],
+                reason=f"micro:{action['key']}",
+                duration_ms=3_800,
+            ) or anything_started
+        if self.movement_enabled and action.get("movement_style"):
+            self.movement.set_scripted(
+                action["movement_style"],
+                duration_ms=1_600,
+                focus=action.get("focus", ""),
+            )
+            anything_started = True
+        if action.get("desk_item"):
+            anything_started = self._trigger_desk_item(
+                action["desk_item"],
+                show_saying=False,
+                source=f"micro:{action['key']}",
+                extra_contexts=list(action.get("contexts", [])),
+                extra_categories=list(action.get("categories", [])),
+                extra_packs=list(action.get("packs", [])),
+            ) or anything_started
+        if action.get("companion_interaction"):
+            anything_started = self._trigger_companion_interaction(
+                action["companion_interaction"],
+                source=f"micro:{action['key']}",
+            ) or anything_started
+        if (
+            anything_started
+            and float(action.get("quote_chance", 0.0)) > 0.0
+            and self._can_speak(9 if self.quote_frequency == "chatty" else 12)
+            and random.random() <= float(action.get("quote_chance", 0.0))
+        ):
+            self._show_saying(
+                source=f"micro:{action['key']}",
+                extra_contexts=list(action.get("contexts", [])),
+                extra_categories=list(action.get("categories", [])),
+                extra_packs=list(action.get("packs", [])),
+            )
+        return anything_started
+
+    def _idle_micro_action_tick(self):
+        if self.is_quitting:
+            return None
+        if not self._automatic_idle_micro_actions_allowed():
+            return self._random_idle_micro_action_delay()
+        action = self._pick_idle_micro_action()
+        if action and self._run_idle_micro_action(action):
+            self._last_idle_micro_action_key = str(action.get("key", ""))
+            self._last_idle_micro_action_at = time.time()
+            self.logger.info(f"idle micro-action: {self._last_idle_micro_action_key}")
+        return self._random_idle_micro_action_delay()
+
     def _movement_tick(self):
         if self.is_quitting:
             return None
@@ -1685,6 +2269,7 @@ class NPCJasonApp:
             or not snapshot.automatic_actions_allowed
             or self.dragging
             or self.toy_manager.active_toy_key()
+            or self.desk_item_manager.active_item_key()
             or self.companion_manager.blocks_owner_movement()
         ):
             return MOVEMENT_TICK_MS
@@ -1759,6 +2344,22 @@ class NPCJasonApp:
                 source=f"scenario:{scenario_key}",
                 extra_contexts=list(payload.get("contexts", [])) + ["scenario", scenario_key],
                 extra_categories=list(payload.get("categories", [])),
+            )
+        if action == "desk_item":
+            return self._trigger_desk_item(
+                step.value,
+                reveal_if_hidden=False,
+                show_saying=bool(payload.get("show_saying", False)),
+                source=f"scenario:{scenario_key}",
+                extra_contexts=list(payload.get("contexts", [])) + ["scenario", scenario_key],
+                extra_categories=list(payload.get("categories", [])),
+                extra_packs=list(payload.get("packs", [])),
+            )
+        if action == "companion":
+            return self._trigger_companion_interaction(
+                step.value,
+                reveal_if_hidden=False,
+                source=f"scenario:{scenario_key}",
             )
         if action == "quote":
             return self._show_saying(
@@ -2165,6 +2766,78 @@ class NPCJasonApp:
             return compact[:33].rstrip() + "..."
         return compact
 
+    def _notification_runtime_context(self):
+        return {
+            "personality_state": self.personality.current_state(),
+            "active_desk_item": self.desk_item_manager.active_item_key(),
+            "active_companion_interaction": self.companion_manager.active_interaction_key(),
+        }
+
+    def _maybe_trigger_notification_reaction(self, observation):
+        if not observation.get("interesting"):
+            return False
+        if (
+            not self.event_reactions_enabled
+            or not self.reaction_toggles.get("focus", True)
+            or not self._automatic_actions_allowed()
+            or self.animation.is_dancing
+            or self.scenario_manager.active_scenario_key()
+            or self.toy_manager.active_toy_key()
+            or self.desk_item_manager.active_item_key()
+            or self.companion_manager.active_interaction_key()
+            or (time.time() - self._last_idle_micro_action_at) < 8
+        ):
+            return False
+        definition = pick_notification_reaction(observation, runtime_context=self._notification_runtime_context())
+        if definition is None:
+            return False
+        reaction_key = f"{definition.key}:{observation.get('reaction_key', '')}"
+        now_ms = int(time.monotonic() * 1000)
+        if (
+            reaction_key == self._last_notification_reaction_key
+            and (now_ms - int(self._last_notification_reaction_at * 1000)) < int(definition.cooldown_ms)
+        ):
+            return False
+        chance = float(definition.chance) * min(1.35, 0.82 + ((1.35 - self._activity_multiplier()) * 0.45))
+        if random.random() > max(0.0, min(1.0, chance)):
+            return False
+        anything_started = False
+        anything_started = self._set_personality_state(
+            definition.state_key,
+            reason=f"notification:{definition.key}",
+            duration_ms=4_400,
+        ) or anything_started
+        if definition.desk_item_key:
+            anything_started = self._trigger_desk_item(
+                definition.desk_item_key,
+                show_saying=False,
+                source=f"notification:{definition.key}",
+                extra_contexts=list(definition.quote_contexts),
+                extra_categories=list(definition.preferred_categories),
+                extra_packs=list(definition.preferred_packs),
+            ) or anything_started
+        if definition.companion_interaction and random.random() <= min(1.0, 0.36 * self._companion_frequency_multiplier()):
+            anything_started = self._trigger_companion_interaction(
+                definition.companion_interaction,
+                source=f"notification:{definition.key}",
+            ) or anything_started
+        if self._can_speak(12):
+            anything_started = self._show_saying(
+                source=f"notification:{definition.key}",
+                extra_contexts=list(definition.quote_contexts) + list(observation.get("contexts", [])),
+                extra_categories=list(definition.preferred_categories) + list(observation.get("categories", [])),
+                extra_packs=list(definition.preferred_packs) + list(observation.get("preferred_packs", [])),
+                render_overrides={
+                    **dict(observation.get("render_overrides", {})),
+                    **dict(definition.render_overrides or {}),
+                },
+            ) or anything_started
+        if anything_started:
+            self._last_notification_reaction_key = reaction_key
+            self._last_notification_reaction_at = time.time()
+            self.logger.info(f"notification reaction: {reaction_key}")
+        return anything_started
+
     def _handle_foreground_change_event(self, title):
         title = str(title or "").strip()
         self.last_active_window_title = title
@@ -2210,6 +2883,8 @@ class NPCJasonApp:
                 self._last_title_joke_at = now
                 self._last_title_reaction_key = observation.get("reaction_key", "")
                 return
+        if self._maybe_trigger_notification_reaction(observation):
+            return
         if self._can_speak(16) and random.random() < 0.18:
             self._show_text(
                 self.dialogue.format_event_text(
@@ -2309,6 +2984,25 @@ class NPCJasonApp:
             )
         return menu
 
+    def _build_desk_item_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        items = self.available_desk_items()
+        if not items:
+            menu.add_command(label="No desk items loaded", state="disabled")
+            return menu
+        for desk_item in items:
+            label = (
+                desk_item["label"]
+                if desk_item["cooldown_ms"] <= 0
+                else f"{desk_item['label']} ({max(1, desk_item['cooldown_ms'] // 1000)}s)"
+            )
+            menu.add_command(
+                label=label,
+                command=lambda chosen=desk_item["key"]: self._trigger_desk_item_from_menu(chosen),
+                state="normal" if desk_item["cooldown_ms"] <= 0 and not desk_item["active"] else "disabled",
+            )
+        return menu
+
     def _build_companion_menu(self, parent):
         menu = self._new_context_menu(parent)
         menu.add_checkbutton(
@@ -2402,6 +3096,40 @@ class NPCJasonApp:
             )
         return menu
 
+    def _build_behavior_tuning_menu(self, parent):
+        menu = self._new_context_menu(parent)
+        activity_menu = self._new_context_menu(menu)
+        activity_var = tk.StringVar(value=self.activity_level)
+        for key, label in (("low", "Low Activity"), ("normal", "Normal Activity"), ("high", "High Activity")):
+            activity_menu.add_radiobutton(
+                label=label,
+                value=key,
+                variable=activity_var,
+                command=lambda chosen=key: self._set_activity_level(chosen),
+            )
+        quote_menu = self._new_context_menu(menu)
+        quote_var = tk.StringVar(value=self.quote_frequency)
+        for key, label in (("quiet", "Quiet Quotes"), ("normal", "Normal Quotes"), ("chatty", "Chatty Quotes")):
+            quote_menu.add_radiobutton(
+                label=label,
+                value=key,
+                variable=quote_var,
+                command=lambda chosen=key: self._set_quote_frequency(chosen),
+            )
+        companion_menu = self._new_context_menu(menu)
+        companion_var = tk.StringVar(value=self.companion_frequency)
+        for key, label in (("low", "Low Companion"), ("normal", "Normal Companion"), ("high", "High Companion")):
+            companion_menu.add_radiobutton(
+                label=label,
+                value=key,
+                variable=companion_var,
+                command=lambda chosen=key: self._set_companion_frequency(chosen),
+            )
+        menu.add_cascade(label="Activity", menu=activity_menu)
+        menu.add_cascade(label="Quote Frequency", menu=quote_menu)
+        menu.add_cascade(label="Companion Frequency", menu=companion_menu)
+        return menu
+
     def _on_right_click(self, event):
         menu = self._new_context_menu(self.root)
         menu.add_command(label=f"Mood: {MOODS[self.mood]['label']}", state="disabled")
@@ -2414,6 +3142,8 @@ class NPCJasonApp:
             )
         if self._active_toy_label():
             menu.add_command(label=f"Toy: {self._active_toy_label()}", state="disabled")
+        elif self._active_desk_item_label():
+            menu.add_command(label=f"Desk Item: {self._active_desk_item_label()}", state="disabled")
         elif self._active_scenario_label():
             menu.add_command(label=f"Scenario: {self._active_scenario_label()}", state="disabled")
         menu.add_command(label="Trigger Quote", command=lambda: self._show_saying(True))
@@ -2426,9 +3156,11 @@ class NPCJasonApp:
         menu.add_command(label="Bring Back On Screen", command=self.bring_back_on_screen)
         menu.add_command(label="Settings", command=self._open_settings_window)
         menu.add_cascade(label="Choose Skin", menu=self._build_skin_menu(menu))
+        menu.add_cascade(label="Desk Items", menu=self._build_desk_item_menu(menu))
         menu.add_cascade(label="Toys", menu=self._build_toy_menu(menu))
         menu.add_cascade(label="Scenarios", menu=self._build_scenario_menu(menu))
         menu.add_cascade(label="Quote Packs", menu=self._build_quote_pack_menu(menu))
+        menu.add_cascade(label="Behavior Tuning", menu=self._build_behavior_tuning_menu(menu))
         menu.add_cascade(label="Special Mode", menu=self._build_special_mode_menu(menu))
         menu.add_checkbutton(
             label="Mute Sounds",
@@ -2502,8 +3234,12 @@ class NPCJasonApp:
             companion_state_label=self.companion_manager.current_state_label(),
             unlocks_enabled=self.unlocks_enabled,
             active_toy_label=self._active_toy_label(),
+            active_desk_item_label=self._active_desk_item_label(),
             active_scenario_label=self._active_scenario_label(),
             seasonal_mode_label=seasonal_label,
+            activity_level=self.activity_level,
+            quote_frequency=self.quote_frequency,
+            companion_frequency=self.companion_frequency,
             skin_options=[
                 TraySkinOption(key=skin_key, label=skin_data.get("label", skin_key))
                 for skin_key, skin_data in sorted(self.skins.items())
@@ -2537,6 +3273,15 @@ class NPCJasonApp:
                     favorite=toy.get("favorite", False),
                 )
                 for toy in self.available_toys()
+            ],
+            desk_item_options=[
+                TrayDeskItemOption(
+                    key=desk_item["key"],
+                    label=desk_item["label"],
+                    cooldown_ms=desk_item["cooldown_ms"],
+                    active=desk_item["active"],
+                )
+                for desk_item in self.available_desk_items()
             ],
             quote_packs=[
                 TrayQuotePackOption(
@@ -2623,6 +3368,9 @@ class NPCJasonApp:
             movement_enabled=self.movement_enabled,
             companion_enabled=self.companion_enabled,
             selected_companion=self.selected_companion_key,
+            activity_level=self.activity_level,
+            quote_frequency=self.quote_frequency,
+            companion_frequency=self.companion_frequency,
             unlocks_enabled=self.unlocks_enabled,
             seasonal_mode_override=self.seasonal_mode_override,
             last_active_season=self.last_active_season,
@@ -2691,6 +3439,7 @@ class NPCJasonApp:
         if self.tray_controller:
             self.tray_controller.stop()
         self.companion_manager.shutdown()
+        self.desk_item_manager.shutdown()
         self.toy_manager.shutdown()
         self.sound_manager.shutdown()
 

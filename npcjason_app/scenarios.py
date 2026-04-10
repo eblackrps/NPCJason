@@ -58,6 +58,7 @@ SCENARIO_DEFINITIONS = {
         preferred_quote_categories=("office", "responsible"),
         steps=(
             ChainStep("set_state", "busy", payload={"duration_ms": 7_000, "lock_ms": 2_600}),
+            ChainStep("desk_item", "keyboard", delay_ms=250, payload={"show_saying": False, "categories": ["office", "helpdesk"]}),
             ChainStep("movement", "pace", delay_ms=400, payload={"duration_ms": 2_400}),
             ChainStep("toy", "stress-ball", delay_ms=500, payload={"show_saying": False}),
             ChainStep(
@@ -83,6 +84,7 @@ SCENARIO_DEFINITIONS = {
         seasonal_modes=("homelab-weekend",),
         steps=(
             ChainStep("set_state", "curious", payload={"duration_ms": 6_500, "lock_ms": 2_000}),
+            ChainStep("desk_item", "tiny-network-rack", delay_ms=220, payload={"show_saying": False, "categories": ["network", "homelab"]}),
             ChainStep("movement", "inspect", delay_ms=400, payload={"duration_ms": 2_000, "focus": "right-edge"}),
             ChainStep("toy", "homelab-cart", delay_ms=450, payload={"show_saying": False}),
             ChainStep("set_state", "confused", delay_ms=300, payload={"duration_ms": 4_200}),
@@ -129,6 +131,7 @@ SCENARIO_DEFINITIONS = {
         preferred_quote_categories=("responsible", "office"),
         steps=(
             ChainStep("set_state", "busy", payload={"duration_ms": 6_000, "lock_ms": 1_800}),
+            ChainStep("desk_item", "coffee-mug", delay_ms=250, payload={"show_saying": False, "categories": ["office", "responsible"]}),
             ChainStep("toy", "stress-ball", delay_ms=400, payload={"show_saying": False}),
             ChainStep(
                 "quote",

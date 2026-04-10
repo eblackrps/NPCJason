@@ -54,6 +54,17 @@
         "cisco",
         "title"
       ],
+      "follow_ups": [
+        {
+          "text": "I would like fewer situations, personally.",
+          "delay_ms": 1200,
+          "chance": 0.58,
+          "categories": [
+            "cisco",
+            "playful"
+          ]
+        }
+      ],
       "affinity": {
         "contexts": [
           "title-cisco",

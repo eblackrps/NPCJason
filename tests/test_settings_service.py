@@ -47,6 +47,9 @@ class SettingsServiceTests(unittest.TestCase):
             movement_enabled=False,
             companion_enabled=False,
             selected_companion="mouse",
+            activity_level="high",
+            quote_frequency="chatty",
+            companion_frequency="low",
             unlocks_enabled=False,
             seasonal_mode_override="office-chaos",
             last_active_season="monday-morning-survival",
@@ -88,6 +91,9 @@ class SettingsServiceTests(unittest.TestCase):
         self.assertFalse(loaded.global_settings.movement_enabled)
         self.assertFalse(loaded.global_settings.companion_enabled)
         self.assertEqual("mouse", loaded.global_settings.selected_companion)
+        self.assertEqual("high", loaded.global_settings.activity_level)
+        self.assertEqual("chatty", loaded.global_settings.quote_frequency)
+        self.assertEqual("low", loaded.global_settings.companion_frequency)
         self.assertFalse(loaded.global_settings.unlocks_enabled)
         self.assertEqual("office-chaos", loaded.global_settings.seasonal_mode_override)
         self.assertEqual(["office"], loaded.global_settings.favorite_skins)
@@ -131,7 +137,7 @@ class SettingsServiceTests(unittest.TestCase):
         self.service.export_to_file(export_path)
         exported = json.loads(export_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(6, exported["schema_version"])
+        self.assertEqual(7, exported["schema_version"])
         self.assertEqual(70, exported["global"]["sound_volume"])
         self.assertEqual({}, exported["instances"])
 

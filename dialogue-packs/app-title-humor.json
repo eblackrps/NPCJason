@@ -54,6 +54,17 @@
         "responsible",
         "ticket"
       ],
+      "follow_ups": [
+        {
+          "text": "I assume there are at least three comments that say 'following.'",
+          "delay_ms": 1350,
+          "chance": 0.55,
+          "categories": [
+            "office",
+            "ticket"
+          ]
+        }
+      ],
       "affinity": {
         "contexts": [
           "title-ticket"

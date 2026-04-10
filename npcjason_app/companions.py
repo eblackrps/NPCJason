@@ -294,6 +294,45 @@ MOUSE_INTERACTIONS = {
             CompanionPhase("credit", "proud", 1_600, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="Ansible Chris made me do it"),
         ),
     ),
+    "desk-patrol": CompanionInteractionDefinition(
+        key="desk-patrol",
+        label="Desk Patrol",
+        description="Send the mouse on a very official little perimeter check.",
+        cooldown_ms=46_000,
+        contexts=("companion", "mouse", "desk-patrol"),
+        tags=("companion", "mouse", "desk", "patrol"),
+        phases=(
+            CompanionPhase("approach", "following", 520, ("companion", "mouse-approach"), ("companion", "mouse")),
+            CompanionPhase("sniff", "sniffing", 860, ("companion", "mouse-sniff"), ("companion", "mouse", "curious")),
+            CompanionPhase("report", "waiting", 1_240, ("companion", "mouse-wait"), ("companion", "mouse", "desk"), speech_line="Desk perimeter checked.\nStill weird."),
+        ),
+    ),
+    "cable-audit": CompanionInteractionDefinition(
+        key="cable-audit",
+        label="Cable Audit",
+        description="Let the mouse investigate the cable situation with absolute false confidence.",
+        cooldown_ms=58_000,
+        contexts=("companion", "mouse", "cable-audit"),
+        tags=("companion", "mouse", "network", "cable"),
+        phases=(
+            CompanionPhase("approach", "following", 460, ("companion", "mouse-approach"), ("companion", "mouse")),
+            CompanionPhase("inspect", "sniffing", 980, ("companion", "mouse-sniff", "network"), ("companion", "mouse", "network")),
+            CompanionPhase("report", "proud", 1_380, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="I inspected the cable.\nNo further clarity."),
+        ),
+    ),
+    "victory-scamper": CompanionInteractionDefinition(
+        key="victory-scamper",
+        label="Victory Scamper",
+        description="A tiny celebratory sprint for moments that absolutely did not need one.",
+        cooldown_ms=52_000,
+        contexts=("companion", "mouse", "victory-scamper"),
+        tags=("companion", "mouse", "celebrating", "playful"),
+        phases=(
+            CompanionPhase("launch", "following", 420, ("companion", "mouse-follow"), ("companion", "mouse", "playful")),
+            CompanionPhase("scamper", "following", 960, ("companion", "mouse-follow", "dance"), ("companion", "mouse", "celebrating"), payload={"frame_ms": 85}),
+            CompanionPhase("pose", "proud", 1_280, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="Tiny victory lap complete."),
+        ),
+    ),
 }
 
 
@@ -399,6 +438,8 @@ class BaseCompanionBehavior:
                     "description": interaction.description,
                     "cooldown_ms": cooldown_ms,
                     "active": interaction.key == self._active_interaction_key,
+                    "contexts": list(interaction.contexts),
+                    "tags": list(interaction.tags),
                 }
             )
         return items
@@ -782,6 +823,8 @@ class CompanionManager:
                     "description": interaction.description,
                     "cooldown_ms": 0,
                     "active": False,
+                    "contexts": list(interaction.contexts),
+                    "tags": list(interaction.tags),
                 }
                 for interaction in definition.interactions.values()
             ]

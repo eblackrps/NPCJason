@@ -54,6 +54,14 @@ def _coerce_str(value, default=""):
     return str(value)
 
 
+def _coerce_choice(value, default, allowed):
+    normalized = _coerce_str(value, default).strip().lower()
+    allowed = {str(item).strip().lower() for item in allowed if str(item).strip()}
+    if normalized in allowed:
+        return normalized
+    return str(default).strip().lower()
+
+
 def _coerce_dict(value, default=None):
     if isinstance(value, dict):
         return value
@@ -150,6 +158,21 @@ def sanitize_settings_payload(payload):
     global_out["selected_companion"] = _coerce_str(
         global_in.get("selected_companion", global_out["selected_companion"])
     ).strip() or global_out["selected_companion"]
+    global_out["activity_level"] = _coerce_choice(
+        global_in.get("activity_level", global_out["activity_level"]),
+        global_out["activity_level"],
+        {"low", "normal", "high"},
+    )
+    global_out["quote_frequency"] = _coerce_choice(
+        global_in.get("quote_frequency", global_out["quote_frequency"]),
+        global_out["quote_frequency"],
+        {"quiet", "normal", "chatty"},
+    )
+    global_out["companion_frequency"] = _coerce_choice(
+        global_in.get("companion_frequency", global_out["companion_frequency"]),
+        global_out["companion_frequency"],
+        {"low", "normal", "high"},
+    )
     global_out["unlocks_enabled"] = _coerce_bool(global_in.get("unlocks_enabled"), global_out["unlocks_enabled"])
     seasonal_mode = _coerce_str(global_in.get("seasonal_mode_override", global_out["seasonal_mode_override"])).strip()
     global_out["seasonal_mode_override"] = seasonal_mode or global_out["seasonal_mode_override"]

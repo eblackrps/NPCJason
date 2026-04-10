@@ -63,6 +63,14 @@ class TrayToyOption:
 
 
 @dataclass
+class TrayDeskItemOption:
+    key: str
+    label: str
+    cooldown_ms: int = 0
+    active: bool = False
+
+
+@dataclass
 class TrayQuotePackOption:
     key: str
     label: str
@@ -103,12 +111,17 @@ class TrayState:
     companion_state_label: str = ""
     unlocks_enabled: bool = True
     active_toy_label: str = ""
+    active_desk_item_label: str = ""
     active_scenario_label: str = ""
     seasonal_mode_label: str = "Auto"
+    activity_level: str = "normal"
+    quote_frequency: str = "normal"
+    companion_frequency: str = "normal"
     skin_options: List[TraySkinOption] = field(default_factory=list)
     companion_options: List[TrayCompanionOption] = field(default_factory=list)
     companion_interactions: List[TrayCompanionInteractionOption] = field(default_factory=list)
     toy_options: List[TrayToyOption] = field(default_factory=list)
+    desk_item_options: List[TrayDeskItemOption] = field(default_factory=list)
     quote_packs: List[TrayQuotePackOption] = field(default_factory=list)
     scenario_options: List[TrayScenarioOption] = field(default_factory=list)
     seasonal_options: List[TraySeasonOption] = field(default_factory=list)
@@ -138,10 +151,14 @@ class TrayActions:
     trigger_companion_interaction: Callable
     toggle_unlocks: Callable
     trigger_toy: Callable
+    trigger_desk_item: Callable
     trigger_quote: Callable
     toggle_quote_pack: Callable
     trigger_scenario: Callable
     set_seasonal_mode: Callable
+    set_activity_level: Callable
+    set_quote_frequency: Callable
+    set_companion_frequency: Callable
     bring_back: Callable
     check_updates: Callable
     open_releases: Callable
@@ -154,6 +171,8 @@ def build_tray_snapshot(state):
     title = f"{state.pet_name} | {state.mood_label} | {state.personality_label}"
     if state.active_toy_label:
         title += f" | {state.active_toy_label}"
+    elif state.active_desk_item_label:
+        title += f" | {state.active_desk_item_label}"
     elif state.active_scenario_label:
         title += f" | {state.active_scenario_label}"
     return {
@@ -172,9 +191,13 @@ def build_tray_snapshot(state):
         "companion_labels": [companion.label for companion in state.companion_options],
         "companion_interactions": [interaction.label for interaction in state.companion_interactions],
         "toy_labels": [toy.label for toy in state.toy_options],
+        "desk_item_labels": [desk_item.label for desk_item in state.desk_item_options],
         "quote_packs": [pack.label for pack in state.quote_packs],
         "scenario_labels": [scenario.label for scenario in state.scenario_options],
         "seasonal_mode": state.seasonal_mode_label,
+        "activity_level": state.activity_level,
+        "quote_frequency": state.quote_frequency,
+        "companion_frequency": state.companion_frequency,
         "pets": [pet.label for pet in state.pets],
     }
 
@@ -285,6 +308,17 @@ class TrayController:
             )
             for toy in state.toy_options
         ]
+        desk_item_items = [
+            item(
+                desk_item.label if desk_item.cooldown_ms <= 0 else f"{desk_item.label} ({max(1, desk_item.cooldown_ms // 1000)}s)",
+                self._dispatch(self.actions.trigger_desk_item, desk_item.key),
+                enabled=lambda menu_item, chosen=desk_item.key: any(
+                    option.key == chosen and option.cooldown_ms <= 0 and not option.active
+                    for option in self.state_provider().desk_item_options
+                ),
+            )
+            for desk_item in state.desk_item_options
+        ]
         quote_pack_items = [
             item(
                 ("★ " if pack.favorite else "") + pack.label,
@@ -346,10 +380,43 @@ class TrayController:
             )
             for option in state.seasonal_options
         ]
+        activity_items = [
+            item(
+                label,
+                self._dispatch(self.actions.set_activity_level, key),
+                checked=lambda menu_item, chosen=key: self.state_provider().activity_level == chosen,
+                radio=True,
+            )
+            for key, label in (("low", "Low Activity"), ("normal", "Normal Activity"), ("high", "High Activity"))
+        ]
+        quote_frequency_items = [
+            item(
+                label,
+                self._dispatch(self.actions.set_quote_frequency, key),
+                checked=lambda menu_item, chosen=key: self.state_provider().quote_frequency == chosen,
+                radio=True,
+            )
+            for key, label in (("quiet", "Quiet Quotes"), ("normal", "Normal Quotes"), ("chatty", "Chatty Quotes"))
+        ]
+        companion_frequency_items = [
+            item(
+                label,
+                self._dispatch(self.actions.set_companion_frequency, key),
+                checked=lambda menu_item, chosen=key: self.state_provider().companion_frequency == chosen,
+                radio=True,
+            )
+            for key, label in (("low", "Low Companion"), ("normal", "Normal Companion"), ("high", "High Companion"))
+        ]
         return pystray.Menu(
             item("Show/Hide", self._dispatch(self.actions.toggle_visibility), default=True),
             item(lambda menu_item: snapshot["title"], lambda icon, menu_item: None, enabled=False),
             item("Choose Skin", pystray.Menu(*skin_items)),
+            item(
+                "Desk Items",
+                pystray.Menu(*desk_item_items)
+                if desk_item_items
+                else pystray.Menu(item("No desk items", lambda icon, menu_item: None, enabled=False)),
+            ),
             item("Toys", pystray.Menu(*toy_items) if toy_items else pystray.Menu(item("No toys", lambda icon, menu_item: None, enabled=False))),
             item(
                 "Scenarios",
@@ -387,6 +454,14 @@ class TrayController:
             ),
             item("Trigger Quote", self._dispatch(self.actions.trigger_quote)),
             item("Quote Packs", pystray.Menu(*quote_pack_items) if quote_pack_items else pystray.Menu(item("No packs", lambda icon, menu_item: None, enabled=False))),
+            item(
+                "Behavior Tuning",
+                pystray.Menu(
+                    item("Activity", pystray.Menu(*activity_items)),
+                    item("Quote Frequency", pystray.Menu(*quote_frequency_items)),
+                    item("Companion Frequency", pystray.Menu(*companion_frequency_items)),
+                ),
+            ),
             item(
                 "Special Mode",
                 pystray.Menu(*seasonal_items)

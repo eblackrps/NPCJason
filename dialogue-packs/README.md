@@ -7,7 +7,7 @@ Legacy `.txt` packs:
 - Separate sayings with a blank line
 - Optional mood sections: `[any]`, `[happy]`, `[tired]`, `[caffeinated]`
 - Lines starting with `#` or `;` are treated as comments
-- Placeholders like `{pet_name}`, `{mood}`, `{time}`, `{date}`, `{active_window}`, `{battery_percent}`, `{skin}`, `{companion}`, `{dance_routine}`, and `{other_pet_name}` are filled in automatically when available
+- Placeholders like `{pet_name}`, `{mood}`, `{time}`, `{date}`, `{active_window}`, `{battery_percent}`, `{skin}`, `{companion}`, `{dance_routine}`, `{desk_item}`, and `{other_pet_name}` are filled in automatically when available
 - Unknown placeholders are left alone, so literal braces in jokes are still safe
 - Unknown section headers are treated as `[any]` and reported as warnings
 - Files that cannot be decoded or read are skipped with a warning
@@ -34,7 +34,8 @@ Structured `.json` packs:
 - `enabled`: optional default enabled flag
 - `categories`: optional pack-wide categories
 - `quotes`: list of strings or objects
-- quote objects support `text`, `weight`, `moods`, `categories`, and `affinity`
+- quote objects support `text`, `weight`, `moods`, `categories`, `affinity`, and optional `follow_ups`
+- follow-up entries support `text`, `delay_ms`, `chance`, `require_contexts`, `exclude_contexts`, and `categories`
 - affinity keys can include `skins`, `tags`, `contexts`, `toys`, `moods`, `packs`, and `categories`
 
 Example:
@@ -53,7 +54,14 @@ Example:
       "affinity": {
         "skins": ["network"],
         "contexts": ["focus"]
-      }
+      },
+      "follow_ups": [
+        {
+          "text": "That sentence got worse the longer I looked at it.",
+          "delay_ms": 1400,
+          "chance": 0.5
+        }
+      ]
     }
   ]
 }
