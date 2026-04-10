@@ -13,6 +13,7 @@ import uuid
 import webbrowser
 
 from .animation import AnimationController
+from .companion_presence import CompanionPresenceController
 from .companions import CompanionManager
 from .coordination import PresenceRecord, PetCoordinator
 from .data.defaults import MOODS, default_settings, default_shared_state
@@ -87,6 +88,8 @@ MOVEMENT_TICK_MS = 140
 SCENARIO_TICK_MS = 150
 CONTINUITY_TICK_MS = 60 * 1000
 IDLE_MICRO_ACTION_RANGE_MS = (14 * 1000, 28 * 1000)
+AMBIENT_WORLD_RANGE_MS = (4 * 60 * 1000, 7 * 60 * 1000)
+SIGNOFF_DELAY_MS = 850
 
 
 class NPCJasonApp:
@@ -128,6 +131,7 @@ class NPCJasonApp:
         self.update_coordinator = UpdateCoordinator(self.update_checker, logger=self.logger)
         self.sound_manager = SoundManager(True, 70, logger=self.logger)
         self.speech_history = SpeechHistory(logger=self.logger)
+        self.presence = CompanionPresenceController(logger=self.logger)
 
         self.settings_window = None
         self.event_bridge = None
@@ -184,6 +188,14 @@ class NPCJasonApp:
         self._last_idle_micro_action_key = ""
         self._last_idle_micro_action_at = 0.0
         self._speech_serial = 0
+        self._last_presence_event_at = 0.0
+        self._last_reaction_line_at = 0.0
+        self._reward_badge_label = ""
+        self._quiet_signoff_sent = {"quiet_hours": False, "fullscreen": False}
+        self._signing_off = False
+        self._pending_session_greeting = False
+        self._pending_session_greeting_until = 0.0
+        self._pending_mode_announcement = ""
 
         self.canvas = self.window.canvas
         self._load_settings()
@@ -200,6 +212,7 @@ class NPCJasonApp:
         self._record_discovery_progress("launches", 1, schedule_save=False)
         self._publish_presence()
         self._start_runtime_loops()
+        self._begin_presence_session()
 
         if self.friend_of:
             self.scheduler.schedule(
@@ -215,6 +228,7 @@ class NPCJasonApp:
         snapshot = self.settings_service.load(self.pet_id, requested_name=self.args.name)
         global_settings = snapshot.global_settings
         instance_settings = snapshot.instance_settings
+        self.presence = CompanionPresenceController(global_settings.companion_presence, logger=self.logger)
 
         self.saved_window_x = instance_settings.x
         self.saved_window_y = instance_settings.y
@@ -298,6 +312,7 @@ class NPCJasonApp:
         self._apply_skin_assets()
         self.animation.on_skin_changed()
         self._apply_dialogue_pack_states()
+        self._backfill_presence_from_existing_usage(global_settings)
         self._refresh_suppression_state()
 
     def _apply_skin_assets(self):
@@ -315,6 +330,38 @@ class NPCJasonApp:
             assets.get("idle_sequence"),
             assets.get("interaction_sequence"),
         )
+
+    def _backfill_presence_from_existing_usage(self, global_settings):
+        if not self.presence or not self.presence.needs_history_backfill():
+            return
+        stats = dict(getattr(global_settings, "discovery_stats", {}) or {})
+        favorite_count = sum(
+            len(items)
+            for items in (
+                self.favorite_skin_keys,
+                self.favorite_toy_keys,
+                self.favorite_scenario_keys,
+                self.favorite_quote_pack_keys,
+            )
+        ) + len(self.speech_history.favorites())
+        unlocked_count = sum(
+            1
+            for item in self.unlock_manager.discovery_catalog()
+            if item.get("unlocked") and not item.get("default_unlocked")
+        )
+        if not self.presence.backfill_from_legacy_activity(
+            launches=stats.get("launches", 0),
+            runtime_minutes=stats.get("runtime_minutes", 0),
+            quotes_spoken=stats.get("quotes_spoken", 0),
+            scenario_runs=stats.get("scenario_runs", 0),
+            discoveries=stats.get("discoveries", 0),
+            unlocked_count=unlocked_count,
+            favorite_count=favorite_count,
+        ):
+            return
+        self.presence.backfill_existing_unlocks_as_announced(self.unlock_manager.discovery_catalog())
+        self.presence.backfill_existing_milestones_as_seen(stats)
+        self.logger.info("presence: backfilled legacy usage into familiarity state")
 
     def _apply_initial_position(self):
         default_x, default_y = self._default_window_position()
@@ -441,6 +488,13 @@ class NPCJasonApp:
             owner="behavior",
         )
         self.scheduler.schedule_loop(
+            "ambient_world",
+            self._ambient_world_tick,
+            initial_delay_ms=self._random_ambient_world_delay(),
+            default_delay_ms=AMBIENT_WORLD_RANGE_MS[0],
+            owner="behavior",
+        )
+        self.scheduler.schedule_loop(
             "conversation_attempt",
             self._maybe_start_conversation,
             initial_delay_ms=self._random_delay(CONVERSATION_ATTEMPT_RANGE_MS),
@@ -532,7 +586,15 @@ class NPCJasonApp:
             hidden,
             reason="tray" if hidden else "",
         )
-        self.runtime_state.snapshot()
+        snapshot = self.runtime_state.snapshot()
+        if snapshot.quiet_hours_suppressed:
+            if snapshot.fullscreen_suppressed or snapshot.screenshot_suppressed:
+                self._quiet_signoff_sent["quiet_hours"] = True
+            else:
+                self._maybe_show_quiet_signoff("quiet_hours")
+        else:
+            self._quiet_signoff_sent["quiet_hours"] = False
+        self._quiet_signoff_sent["fullscreen"] = False
 
     def _root_is_hidden(self):
         return self.window.is_hidden()
@@ -728,22 +790,38 @@ class NPCJasonApp:
         return discoveries
 
     def _flush_discovery_notifications(self, reveal_if_hidden=False):
-        pending = self.unlock_manager.pending_discoveries()
+        raw_pending = self.unlock_manager.pending_discoveries()
+        pending = [
+            {
+                "key": discovery.key,
+                "label": discovery.label,
+                "item_type": discovery.item_type,
+            }
+            for discovery in raw_pending
+        ]
+        if not pending and self.presence:
+            pending = self.presence.unannounced_unlocks(self.unlock_manager.discovery_catalog())[:3]
         if not pending:
+            self._reward_badge_label = ""
             return False
         if not self._can_speak(1):
-            self.unlock_manager.restore_pending(pending)
+            if raw_pending:
+                self.unlock_manager.restore_pending(raw_pending)
             return False
         for discovery in pending:
-            if discovery.item_type == "quote_pack":
-                self.quote_pack_states.pop(discovery.key, None)
+            if discovery.get("item_type") == "quote_pack":
+                self.quote_pack_states.pop(discovery.get("key"), None)
         self._apply_dialogue_pack_states()
-        first = pending[0]
-        label = first.label
-        text = f"Discovery unlocked:\n{label}"
-        if len(pending) > 1:
-            text += f"\n+{len(pending) - 1} more weird little thing(s)."
-        return self._show_text(text, reveal_if_hidden=reveal_if_hidden, source="discovery")
+        text = self.presence.build_unlock_announcement(pending) if self.presence else f"Discovery unlocked:\n{pending[0]['label']}"
+        shown = self._show_text(text, reveal_if_hidden=reveal_if_hidden, source="discovery")
+        if shown:
+            if self.presence:
+                self.presence.mark_unlocks_announced([item["key"] for item in pending])
+            self._reward_badge_label = pending[0]["label"]
+            self._mark_presence_event()
+            self._schedule_settings_save()
+            self._refresh_tray()
+        return shown
 
     def _set_personality_state(self, state_key, reason="manual", duration_ms=None, lock_ms=0, play_sound=False):
         changed = self.personality.transition_to(
@@ -760,6 +838,8 @@ class NPCJasonApp:
             self._record_discovery_progress("curious_beats", 1, schedule_save=False)
         if current_state == "confused":
             self._record_discovery_progress("confused_beats", 1, schedule_save=False)
+            if random.random() <= 0.28:
+                self._maybe_show_structured_reaction("confused", min_gap_seconds=5)
         if play_sound:
             self._play_state_sound(current_state)
         self._flush_discovery_notifications(reveal_if_hidden=False)
@@ -837,6 +917,107 @@ class NPCJasonApp:
             "companion_bonus": companion_bonus,
         }
 
+    def _presence_bias(self):
+        if not self.presence:
+            return {
+                "contexts": [],
+                "categories": [],
+                "packs": [],
+                "preferred_states": [],
+                "preferred_scenarios": [],
+                "preferred_desk_items": [],
+                "preferred_companion_interactions": [],
+                "top_behaviors": [],
+            }
+        return self.presence.behavior_bias()
+
+    def _record_presence_behavior(self, behavior_key, categories=None, familiarity_gain=0):
+        if not self.presence:
+            return
+        self.presence.note_behavior(
+            behavior_key,
+            categories=categories,
+            familiarity_gain=familiarity_gain,
+        )
+
+    def _session_runtime_minutes(self):
+        if not self.presence:
+            return 0
+        return self.presence.session_minutes()
+
+    def _random_ambient_world_delay(self):
+        minimum, maximum = AMBIENT_WORLD_RANGE_MS
+        return int(random.randint(minimum, maximum) * self._activity_multiplier())
+
+    def _presence_event_allowed(self, min_silence_seconds=18):
+        return (
+            self._automatic_actions_allowed()
+            and not self._root_is_hidden()
+            and not self.dragging
+            and self._can_speak(min_silence_seconds)
+            and not self.animation.is_dancing
+            and not self.scenario_manager.active_scenario_key()
+            and not self.toy_manager.active_toy_key()
+            and not self.desk_item_manager.active_item_key()
+            and not self.companion_manager.active_interaction_key()
+            and not self.companion_manager.blocks_owner_movement()
+            and (time.time() - self._last_presence_event_at) >= max(12, min_silence_seconds)
+        )
+
+    def _mark_presence_event(self):
+        self._last_presence_event_at = time.time()
+
+    def _begin_presence_session(self):
+        if not self.presence:
+            return
+        session_info = self.presence.begin_session(now=datetime.now(), mood_key=self.mood)
+        self._pending_session_greeting = True
+        self._pending_session_greeting_until = time.time() + (15 * 60)
+        self._pending_mode_announcement = (
+            session_info.get("mode_announcement", "")
+            if session_info.get("new_day")
+            else ""
+        )
+        self._schedule_settings_save()
+        self.scheduler.schedule(
+            "session_greeting",
+            2200,
+            self._deliver_session_greeting,
+            owner="speech",
+        )
+        self._refresh_tray()
+
+    def _deliver_session_greeting(self):
+        if not self.presence or self.is_quitting or self._signing_off or not self._pending_session_greeting:
+            return
+        if time.time() > self._pending_session_greeting_until:
+            self._pending_session_greeting = False
+            self._pending_mode_announcement = ""
+            return
+        if not self._presence_event_allowed(min_silence_seconds=1):
+            self.scheduler.schedule(
+                "session_greeting",
+                20_000,
+                self._deliver_session_greeting,
+                owner="speech",
+            )
+            return
+        greeting = self.presence.pick_greeting(time_of_day=datetime.now())
+        text = greeting["text"]
+        if self._pending_mode_announcement:
+            text += "\n" + self._pending_mode_announcement
+            self._pending_mode_announcement = ""
+        shown = self._show_text(
+            text,
+            source="greeting",
+            template_text=text,
+        )
+        if shown:
+            self._pending_session_greeting = False
+            self._mark_presence_event()
+            return
+        self._pending_session_greeting = False
+
     def _sayings_context(self, overrides=None):
         now = datetime.now()
         battery = self.last_battery_snapshot or get_battery_snapshot() or {}
@@ -866,6 +1047,7 @@ class NPCJasonApp:
         seasonal = self._seasonal_context()
         bias = self._active_comedy_bias()
         specialty = self._skin_specialty_context()
+        presence = self._presence_bias()
         contexts = self._dedupe(self.skin_quote_affinity.get("contexts", []))
         contexts.extend(context for context in self.personality.quote_contexts() if context not in contexts)
         contexts.extend(context for context in self._dedupe(extra_contexts) if context not in contexts)
@@ -875,6 +1057,7 @@ class NPCJasonApp:
         contexts.extend(context for context in seasonal.get("contexts", []) if context not in contexts)
         contexts.extend(context for context in specialty.get("contexts", []) if context not in contexts)
         contexts.extend(context for context in bias.get("contexts", []) if context not in contexts)
+        contexts.extend(context for context in presence.get("contexts", []) if context not in contexts)
 
         preferred_categories = self._dedupe(self.skin_quote_affinity.get("categories", []))
         preferred_categories.extend(
@@ -901,6 +1084,9 @@ class NPCJasonApp:
         preferred_categories.extend(
             category for category in bias.get("categories", []) if category not in preferred_categories
         )
+        preferred_categories.extend(
+            category for category in presence.get("categories", []) if category not in preferred_categories
+        )
 
         preferred_packs = self._dedupe(self.skin_quote_affinity.get("packs", []))
         preferred_packs.extend(pack for pack in self._dedupe(extra_packs) if pack not in preferred_packs)
@@ -912,6 +1098,9 @@ class NPCJasonApp:
         )
         preferred_packs.extend(
             pack for pack in bias.get("packs", []) if pack not in preferred_packs
+        )
+        preferred_packs.extend(
+            pack for pack in presence.get("packs", []) if pack not in preferred_packs
         )
 
         return {
@@ -1032,6 +1221,7 @@ class NPCJasonApp:
     def _record_saying(self, template_text, rendered_text, source):
         self.speech_history.record(template_text, rendered_text, source)
         self._record_discovery_progress("quotes_spoken", 1, schedule_save=False)
+        self._record_presence_behavior("quote")
         self._schedule_settings_save()
 
     def recent_saying_texts(self):
@@ -1142,6 +1332,45 @@ class NPCJasonApp:
         self._play_effect("speech", category="speech", throttle_ms=350, throttle_key="speech")
         self._record_saying(template_text or text, text, source)
         return True
+
+    def _maybe_show_structured_reaction(self, reaction_key, min_gap_seconds=8):
+        if (
+            not self.presence
+            or self.is_quitting
+            or self._signing_off
+            or not self._presence_event_allowed(min_silence_seconds=min_gap_seconds)
+            or (time.time() - self._last_reaction_line_at) < min_gap_seconds
+        ):
+            return False
+        reaction = self.presence.pick_reaction(reaction_key)
+        shown = self._show_text(
+            reaction["text"],
+            source=f"reaction:{reaction_key}",
+            template_text=reaction["text"],
+        )
+        if shown:
+            self._last_reaction_line_at = time.time()
+            self._mark_presence_event()
+        return shown
+
+    def _maybe_show_quiet_signoff(self, reason_key):
+        if (
+            not self.presence
+            or self._quiet_signoff_sent.get(reason_key)
+            or self._root_is_hidden()
+            or not self._can_speak(14)
+        ):
+            return False
+        signoff = self.presence.pick_signoff(quiet=True)
+        shown = self._show_text(
+            signoff["text"],
+            source=f"quiet-signoff:{reason_key}",
+            template_text=signoff["text"],
+        )
+        if shown:
+            self._quiet_signoff_sent[reason_key] = True
+            self._mark_presence_event()
+        return shown
 
     def _follow_up_allowed(self, follow_up, render_context):
         if not isinstance(follow_up, FollowUpQuote):
@@ -1584,15 +1813,20 @@ class NPCJasonApp:
 
     def _scenario_pick_context(self):
         seasonal = self._seasonal_context()
+        presence = self._presence_bias()
         preferred_categories = self._dedupe(self.skin_quote_affinity.get("categories", []))
         preferred_categories.extend(
             category
             for category in self.personality.preferred_categories()
             if category not in preferred_categories
         )
+        preferred_categories.extend(
+            category for category in presence.get("categories", []) if category not in preferred_categories
+        )
         return {
             "skin_tags": list(self.skin_tags) + list(seasonal.get("preferred_skin_tags", [])),
             "preferred_categories": preferred_categories,
+            "preferred_scenarios": list(presence.get("preferred_scenarios", [])),
             "favorite_scenarios": list(self.favorite_scenario_keys),
             "seasonal_modes": list(seasonal.get("active_keys", [])),
             "personality_state": self.personality.current_state(),
@@ -1732,6 +1966,7 @@ class NPCJasonApp:
         preferred_categories = set(self.skin_quote_affinity.get("categories", [])) | set(self.personality.preferred_categories())
         specialty = self._skin_specialty_context()
         active_bias = self._active_comedy_bias()
+        presence = self._presence_bias()
         active_contexts = set(active_bias.get("contexts", []))
         active_categories = set(active_bias.get("categories", []))
         for item in self.available_desk_items():
@@ -1746,6 +1981,10 @@ class NPCJasonApp:
                 weight += 2
             if active_contexts & item_contexts:
                 weight += 3
+            if item["key"] in presence.get("preferred_desk_items", []):
+                weight += 3
+            if set(presence.get("categories", [])) & item_tags:
+                weight += 2
             weight += int(specialty.get("desk_item_bonus", {}).get(item["key"], 0))
             if self.personality.current_state() in {"busy", "annoyed"} and item["key"] == "keyboard":
                 weight += 4
@@ -1772,6 +2011,7 @@ class NPCJasonApp:
         specialty = self._skin_specialty_context()
         personality_state = self.personality.current_state()
         active_bias = self._active_comedy_bias()
+        presence = self._presence_bias()
         contexts = set(active_bias.get("contexts", []))
         categories = set(active_bias.get("categories", []))
         for interaction in self.available_companion_interactions():
@@ -1787,8 +2027,16 @@ class NPCJasonApp:
                 weight += 3
             if categories & interaction_tags:
                 weight += 2
+            if key in presence.get("preferred_companion_interactions", []):
+                weight += 4
+            if set(presence.get("categories", [])) & interaction_tags:
+                weight += 2
             weight += int(specialty.get("companion_bonus", {}).get(key, 0))
             if personality_state in {"curious", "confused"} and key in {"desk-patrol", "cable-audit"}:
+                weight += 3
+            if personality_state in {"curious", "busy"} and key in {"mug-recon", "zip-tie-recovery"}:
+                weight += 2
+            if personality_state in {"sneaky", "smug"} and key == "crumb-heist":
                 weight += 3
             if personality_state in {"celebrating", "smug"} and key == "victory-scamper":
                 weight += 4
@@ -1835,11 +2083,14 @@ class NPCJasonApp:
                     (item["label"] for item in self.available_companion_interactions() if item["key"] == interaction_key),
                     "That mouse bit",
                 )
-                self._show_text(f"{interaction_label} is cooling down.\nTry again in {seconds}s.")
+                reaction = self.presence.pick_reaction("cooldown")["text"] if self.presence else "Try again in a second."
+                self._show_text(f"{interaction_label} is cooling down.\n{reaction.splitlines()[0]} ({seconds}s)")
             elif reveal_if_hidden and result.reason == "busy":
-                self._show_text("The mouse is already doing a whole bit.\nGive it a second.")
+                reaction = self.presence.pick_reaction("busy")["text"] if self.presence else "The mouse is occupied."
+                self._show_text(reaction)
             return False
         self._set_personality_state("curious", reason=f"companion:{interaction_key}", duration_ms=3_600)
+        self._record_presence_behavior("companion", categories=list(result.tags), familiarity_gain=1)
         self._set_comedy_bias(
             contexts=list(result.contexts),
             categories=list(result.tags),
@@ -1878,9 +2129,11 @@ class NPCJasonApp:
         if not result.started:
             if reveal_if_hidden and result.reason == "cooldown":
                 seconds = max(1, int(result.remaining_cooldown_ms / 1000))
-                self._show_text(f"{self._active_desk_item_label(item_key)} is cooling down.\nTry again in {seconds}s.")
+                reaction = self.presence.pick_reaction("cooldown")["text"] if self.presence else "Try again in a second."
+                self._show_text(f"{self._active_desk_item_label(item_key)} is cooling down.\n{reaction.splitlines()[0]} ({seconds}s)")
             elif reveal_if_hidden and result.reason == "busy":
-                self._show_text("That desk prop is already doing a whole thing.\nGive it a second.")
+                reaction = self.presence.pick_reaction("busy")["text"] if self.presence else "That desk prop is occupied."
+                self._show_text(reaction)
             return False
         state_map = {
             "coffee-mug": "busy",
@@ -1889,6 +2142,7 @@ class NPCJasonApp:
         }
         if item_key in state_map:
             self._set_personality_state(state_map[item_key], reason=f"desk-item:{item_key}", duration_ms=3_800)
+        self._record_presence_behavior("desk-item", categories=list(result.tags), familiarity_gain=1)
         self._set_comedy_bias(
             contexts=list(result.contexts),
             categories=list(result.tags),
@@ -1935,13 +2189,16 @@ class NPCJasonApp:
         if not result.started:
             if reveal_if_hidden and result.reason == "cooldown":
                 seconds = max(1, int(result.remaining_cooldown_ms / 1000))
-                self._show_text(f"{self._active_toy_label(toy_key)} is cooling down.\nTry again in {seconds}s.")
+                reaction = self.presence.pick_reaction("cooldown")["text"] if self.presence else "Try again in a second."
+                self._show_text(f"{self._active_toy_label(toy_key)} is cooling down.\n{reaction.splitlines()[0]} ({seconds}s)")
             elif reveal_if_hidden and result.reason == "busy":
-                self._show_text("Jason is already busy with a toy.\nGive him a second.")
+                reaction = self.presence.pick_reaction("busy")["text"] if self.presence else "Jason is occupied."
+                self._show_text(reaction)
             return False
         if toy_key == "tricycle":
             self._ride_origin_position = (self.window_x, self.window_y)
         self._record_discovery_progress("toy_uses", 1, schedule_save=False)
+        self._record_presence_behavior("toy", categories=list(result.tags), familiarity_gain=1)
         toy_state_map = {
             "tricycle": "celebrating",
             "rubber-duck": "curious",
@@ -2030,6 +2287,7 @@ class NPCJasonApp:
 
     def _personality_runtime_context(self):
         seasonal = self._seasonal_context()
+        presence = self._presence_bias()
         return {
             "mood": self.mood,
             "chaos_mode": self.chaos_mode,
@@ -2038,6 +2296,7 @@ class NPCJasonApp:
             "recent_scenarios": list(self.scenario_manager.recent_history()),
             "seasonal_contexts": seasonal.get("contexts", []),
             "active_scenario": self.scenario_manager.active_scenario_key(),
+            "preferred_states": list(presence.get("preferred_states", [])),
         }
 
     def _personality_tick(self):
@@ -2052,6 +2311,8 @@ class NPCJasonApp:
                 self._record_discovery_progress("curious_beats", 1, schedule_save=False)
             if changed == "confused":
                 self._record_discovery_progress("confused_beats", 1, schedule_save=False)
+                if random.random() <= 0.3:
+                    self._maybe_show_structured_reaction("confused", min_gap_seconds=5)
             self._play_state_sound(changed)
             self._schedule_settings_save()
             self._refresh_tray()
@@ -2128,6 +2389,34 @@ class NPCJasonApp:
                 "quote_chance": 0.24,
             },
             {
+                "key": "crumb-heist",
+                "state": "sneaky",
+                "weight": 2,
+                "companion_interaction": "crumb-heist",
+                "contexts": ["micro-action", "desk", "mouse-sidekick"],
+                "categories": ["playful", "desk"],
+                "quote_chance": 0.18,
+            },
+            {
+                "key": "mug-recon",
+                "state": "curious",
+                "weight": 2,
+                "companion_interaction": "mug-recon",
+                "contexts": ["micro-action", "coffee-break", "mouse-sidekick"],
+                "categories": ["office", "playful"],
+                "quote_chance": 0.16,
+            },
+            {
+                "key": "zip-tie-recovery",
+                "state": "curious",
+                "weight": 2,
+                "companion_interaction": "zip-tie-recovery",
+                "contexts": ["micro-action", "network", "mouse-sidekick"],
+                "categories": ["network", "desk"],
+                "packs": ["cisco-jokes"],
+                "quote_chance": 0.15,
+            },
+            {
                 "key": "proud-of-nothing",
                 "state": "smug",
                 "weight": 2,
@@ -2164,6 +2453,7 @@ class NPCJasonApp:
     def _pick_idle_micro_action(self):
         specialty = self._skin_specialty_context()
         current_state = self.personality.current_state()
+        presence = self._presence_bias()
         available_companion_keys = {item["key"] for item in self.available_companion_interactions() if item["cooldown_ms"] <= 0 and not item["active"]}
         available_desk_item_keys = {item["key"] for item in self.available_desk_items() if item["cooldown_ms"] <= 0 and not item["active"]}
         weighted = []
@@ -2188,9 +2478,15 @@ class NPCJasonApp:
                 weight += 5
             if action.get("desk_item"):
                 weight += int(specialty.get("desk_item_bonus", {}).get(action["desk_item"], 0))
+                if action["desk_item"] in presence.get("preferred_desk_items", []):
+                    weight += 3
             if action.get("companion_interaction"):
                 weight += int(specialty.get("companion_bonus", {}).get(action["companion_interaction"], 0))
+                if action["companion_interaction"] in presence.get("preferred_companion_interactions", []):
+                    weight += 4
                 weight = int(weight * self._companion_frequency_multiplier())
+            if set(action.get("categories", [])) & set(presence.get("categories", [])):
+                weight += 2
             weighted.append((action, max(1, weight)))
         if not weighted:
             return None
@@ -2260,6 +2556,103 @@ class NPCJasonApp:
             self.logger.info(f"idle micro-action: {self._last_idle_micro_action_key}")
         return self._random_idle_micro_action_delay()
 
+    def _maybe_trigger_milestone_moment(self):
+        if not self.presence or not self._presence_event_allowed(min_silence_seconds=16):
+            return False
+        milestone = self.presence.next_milestone(
+            self.unlock_manager.stats(),
+            now=datetime.now(),
+            consume=False,
+        )
+        if milestone is None:
+            return False
+        anything_started = False
+        if milestone.state_key:
+            anything_started = self._set_personality_state(
+                milestone.state_key,
+                reason=f"milestone:{milestone.key}",
+                duration_ms=4_400,
+            ) or anything_started
+        if milestone.companion_interaction:
+            anything_started = self._trigger_companion_interaction(
+                milestone.companion_interaction,
+                source=f"milestone:{milestone.key}",
+            ) or anything_started
+        if milestone.dance and not self.animation.is_dancing:
+            anything_started = self._trigger_dance(show_saying=False) or anything_started
+        shown = self._show_text(
+            milestone.text,
+            source=f"milestone:{milestone.key}",
+            template_text=milestone.text,
+        )
+        if shown or anything_started:
+            self.presence.mark_milestone_seen(milestone.key, familiarity_gain=1)
+            self._record_presence_behavior("milestone", categories=list(milestone.categories), familiarity_gain=1)
+            self._mark_presence_event()
+            self._schedule_settings_save()
+            return True
+        return False
+
+    def _ambient_world_tick(self):
+        if self.is_quitting:
+            return None
+        if not self.presence or not self._presence_event_allowed(min_silence_seconds=24):
+            return self._random_ambient_world_delay()
+        beat = self.presence.pick_ambient_world_beat(
+            {
+                "available_desk_items": [
+                    item["key"]
+                    for item in self.available_desk_items()
+                    if item["cooldown_ms"] <= 0 and not item["active"]
+                ],
+                "available_companion_interactions": [
+                    item["key"]
+                    for item in self.available_companion_interactions()
+                    if item["cooldown_ms"] <= 0 and not item["active"]
+                ],
+                "personality_state": self.personality.current_state(),
+            }
+        )
+        if beat is None:
+            return self._random_ambient_world_delay()
+        anything_started = False
+        if beat.state_key:
+            anything_started = self._set_personality_state(
+                beat.state_key,
+                reason=f"ambient:{beat.key}",
+                duration_ms=3_900,
+            ) or anything_started
+        if self.movement_enabled and beat.movement_style:
+            self.movement.set_scripted(
+                beat.movement_style,
+                duration_ms=1_900,
+                focus=beat.focus,
+            )
+            anything_started = True
+        if beat.desk_item_key:
+            anything_started = self._trigger_desk_item(
+                beat.desk_item_key,
+                show_saying=False,
+                source=f"ambient:{beat.key}",
+                extra_contexts=list(beat.contexts),
+                extra_categories=list(beat.categories),
+                extra_packs=list(beat.packs),
+            ) or anything_started
+        if beat.companion_interaction:
+            anything_started = self._trigger_companion_interaction(
+                beat.companion_interaction,
+                source=f"ambient:{beat.key}",
+            ) or anything_started
+        shown = self._show_text(
+            beat.text,
+            source=f"ambient:{beat.key}",
+            template_text=beat.text,
+        )
+        if shown or anything_started:
+            self._record_presence_behavior("ambient", categories=list(beat.categories))
+            self._mark_presence_event()
+        return self._random_ambient_world_delay()
+
     def _movement_tick(self):
         if self.is_quitting:
             return None
@@ -2298,8 +2691,12 @@ class NPCJasonApp:
                 for option in self.available_scenarios():
                     if option["key"] == scenario_key and option["cooldown_ms"] > 0:
                         seconds = max(1, int(option["cooldown_ms"] / 1000))
-                        self._show_text(f"{option['label']} is cooling down.\nTry again in {seconds}s.")
+                        reaction = self.presence.pick_reaction("cooldown")["text"] if self.presence else "Try again soon."
+                        self._show_text(f"{option['label']} is cooling down.\n{reaction.splitlines()[0]} ({seconds}s)")
                         break
+                else:
+                    reaction = self.presence.pick_reaction("busy")["text"] if self.presence else "I am already in the middle of something."
+                    self._show_text(reaction)
             return False
         definition = self.scenario_manager.definition(scenario_key)
         if definition and source != "scenario-manual":
@@ -2310,6 +2707,7 @@ class NPCJasonApp:
             )
         self.last_scenario_key = scenario_key
         self._record_discovery_progress("scenario_runs", 1, schedule_save=False)
+        self._record_presence_behavior("scenario", categories=list(definition.tags) if definition else [], familiarity_gain=1)
         self._play_scenario_sound(scenario_key)
         self._schedule_settings_save()
         self._refresh_tray()
@@ -2394,6 +2792,8 @@ class NPCJasonApp:
         if result.completed_scenario:
             self.last_scenario_key = result.completed_scenario
             self.recent_scenario_keys = self.scenario_manager.recent_history()
+            if random.random() <= 0.28:
+                self._maybe_show_structured_reaction("success", min_gap_seconds=6)
             self._schedule_settings_save()
             self._refresh_tray()
         return SCENARIO_TICK_MS
@@ -2404,6 +2804,7 @@ class NPCJasonApp:
         self._record_discovery_progress("runtime_minutes", 1, schedule_save=False)
         self.recent_scenario_keys = self.scenario_manager.recent_history()
         self._flush_discovery_notifications(reveal_if_hidden=False)
+        self._maybe_trigger_milestone_moment()
         self._schedule_settings_save()
         return CONTINUITY_TICK_MS
 
@@ -2718,7 +3119,7 @@ class NPCJasonApp:
 
         actions = self.coordinator.consume_commands()
         if "quit" in actions:
-            self._do_quit()
+            self._begin_quit_sequence()
             return None
         return COMMAND_POLL_MS
 
@@ -3134,6 +3535,10 @@ class NPCJasonApp:
         menu = self._new_context_menu(self.root)
         menu.add_command(label=f"Mood: {MOODS[self.mood]['label']}", state="disabled")
         menu.add_command(label=f"State: {self._personality_label()}", state="disabled")
+        if self.presence:
+            menu.add_command(label=f"Relationship: {self.presence.relationship_label()}", state="disabled")
+            menu.add_command(label=f"Today's Vibe: {self.presence.session_mode_label()}", state="disabled")
+            menu.add_command(label=f"Theme: {self.presence.theme_label()}", state="disabled")
         menu.add_command(label=f"Name: {self.pet_name}", state="disabled")
         if self.companion_enabled:
             menu.add_command(
@@ -3223,6 +3628,10 @@ class NPCJasonApp:
             pet_name=self.pet_name,
             mood_label=MOODS[self.mood]["label"],
             personality_label=self._personality_label(),
+            relationship_label=self.presence.relationship_label() if self.presence else "",
+            session_mode_label=self.presence.session_mode_label() if self.presence else "",
+            theme_spotlight_label=self.presence.theme_label() if self.presence else "",
+            reward_label=self._reward_badge_label,
             skin_key=self.skin_key,
             sound_enabled=self.sound_enabled,
             auto_start_enabled=self.startup_manager.is_enabled(),
@@ -3388,6 +3797,7 @@ class NPCJasonApp:
             recent_scenarios=list(self.scenario_manager.recent_history()),
             favorite_templates=list(self.speech_history.favorites()),
             recent_sayings=list(self.speech_history.recent()),
+            companion_presence=self.presence.to_payload() if self.presence else {},
         )
 
     def _current_instance_settings(self):
@@ -3413,13 +3823,35 @@ class NPCJasonApp:
 
     def _quit(self, icon=None, menu_item=None):
         if self.scheduler.on_ui_thread():
+            self._begin_quit_sequence()
+            return
+        self.scheduler.dispatch(self._begin_quit_sequence)
+
+    def _begin_quit_sequence(self):
+        if self.is_quitting or self._signing_off:
+            return
+        if self._root_is_hidden() or not self.presence:
             self._do_quit()
             return
-        self.scheduler.dispatch(self._do_quit)
+        signoff = self.presence.pick_signoff(quiet=False)
+        shown = self._show_text(
+            signoff["text"],
+            source="signoff",
+            template_text=signoff["text"],
+        )
+        if not shown:
+            self._do_quit()
+            return
+        self._signing_off = True
+        self._mark_presence_event()
+        self.root.after(SIGNOFF_DELAY_MS, self._do_quit)
 
     def _do_quit(self):
         if self.is_quitting:
             return
+        self._signing_off = False
+        if self.presence:
+            self.presence.end_session(now=datetime.now())
         self.runtime_state.begin_shutdown()
         self.scheduler.shutdown()
         self._destroy_current_bubble()

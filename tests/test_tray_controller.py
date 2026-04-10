@@ -21,6 +21,10 @@ class TrayControllerTests(unittest.TestCase):
             pet_name="Desk Jason",
             mood_label="Happy",
             personality_label="Busy",
+            relationship_label="Established Menace",
+            session_mode_label="Patch Goblin",
+            theme_spotlight_label="Office Chaos Spotlight",
+            reward_label="What Do Pack",
             skin_key="wizard",
             sound_enabled=False,
             auto_start_enabled=True,
@@ -59,6 +63,10 @@ class TrayControllerTests(unittest.TestCase):
         snapshot = build_tray_snapshot(state)
 
         self.assertEqual("Desk Jason | Happy | Busy | Rubber Duck", snapshot["title"])
+        self.assertEqual("Established Menace", snapshot["relationship_label"])
+        self.assertEqual("Patch Goblin", snapshot["session_mode_label"])
+        self.assertEqual("Office Chaos Spotlight", snapshot["theme_spotlight_label"])
+        self.assertEqual("What Do Pack", snapshot["reward_label"])
         self.assertEqual(["Classic Jason", "Wizard Jason"], snapshot["skin_labels"])
         self.assertEqual("wizard", snapshot["selected_skin"])
         self.assertEqual(["Buddy | Wizard | happy"], snapshot["pets"])

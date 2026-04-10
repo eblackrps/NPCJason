@@ -28,7 +28,16 @@ class CompanionManagerTests(unittest.TestCase):
 
         self.assertEqual("mouse", companions[0]["key"])
         self.assertEqual("feed-cheese", interactions[0]["key"])
-        self.assertTrue({"desk-patrol", "cable-audit", "victory-scamper"}.issubset({item["key"] for item in interactions}))
+        self.assertTrue(
+            {
+                "desk-patrol",
+                "cable-audit",
+                "victory-scamper",
+                "crumb-heist",
+                "mug-recon",
+                "zip-tie-recovery",
+            }.issubset({item["key"] for item in interactions})
+        )
 
     def test_feed_cheese_eventually_emits_required_line(self):
         result = self.manager.trigger_interaction("feed-cheese")

@@ -1,4 +1,7 @@
-SETTINGS_SCHEMA_VERSION = 7
+from ..companion_presence import default_companion_presence
+
+
+SETTINGS_SCHEMA_VERSION = 8
 SHARED_STATE_SCHEMA_VERSION = 1
 
 MOODS = {
@@ -74,6 +77,7 @@ def default_settings():
             "recent_scenarios": [],
             "favorite_sayings": [],
             "recent_sayings": [],
+            "companion_presence": default_companion_presence(),
         },
         "instances": {},
     }

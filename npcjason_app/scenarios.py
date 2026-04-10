@@ -307,6 +307,9 @@ class ScenarioManager:
         preferred_categories = {
             str(item).strip() for item in context.get("preferred_categories", []) if str(item).strip()
         }
+        preferred_scenarios = {
+            str(item).strip() for item in context.get("preferred_scenarios", []) if str(item).strip()
+        }
         personality_state = str(context.get("personality_state", "")).strip()
         chaos_mode = bool(context.get("chaos_mode"))
 
@@ -327,6 +330,8 @@ class ScenarioManager:
                 weight += 2
             if preferred_categories & set(definition.preferred_quote_categories):
                 weight += 2
+            if definition.key in preferred_scenarios:
+                weight += 3
             if seasonal_modes & set(definition.seasonal_modes):
                 weight += 4
             if chaos_mode and {"chaos", "playful"} & set(definition.tags):

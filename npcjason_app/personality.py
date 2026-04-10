@@ -288,6 +288,11 @@ class PersonalityController:
         recent_scenarios = list(context.get("recent_scenarios", []))
         chaos_mode = bool(context.get("chaos_mode"))
         active_scenario = str(context.get("active_scenario", "")).strip()
+        preferred_states = {
+            str(item).strip()
+            for item in context.get("preferred_states", [])
+            if str(item).strip()
+        }
 
         for state_key, weight in current.transition_weights.items():
             adjusted = max(1, int(weight))
@@ -306,6 +311,8 @@ class PersonalityController:
             if recent_scenarios and state_key == "busy" and any("office" in item for item in recent_scenarios[-2:]):
                 adjusted += 1
             if active_scenario and state_key == "celebrating" and "victory" in active_scenario:
+                adjusted += 2
+            if preferred_states and state_key in preferred_states:
                 adjusted += 2
             weighted.append((state_key, adjusted))
 

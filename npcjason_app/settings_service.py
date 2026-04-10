@@ -73,6 +73,7 @@ class GlobalSettings:
     recent_scenarios: List[str] = field(default_factory=list)
     favorite_templates: List[str] = field(default_factory=list)
     recent_sayings: List[dict] = field(default_factory=list)
+    companion_presence: Dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -232,6 +233,7 @@ class SettingsService:
                 if str(item).strip()
             ][-30:],
             recent_sayings=normalize_recent_sayings(global_settings.get("recent_sayings", [])),
+            companion_presence=dict(global_settings.get("companion_presence", {})),
         )
         instance_snapshot = InstanceSettings(
             x=instance_settings.get("x"),
@@ -300,6 +302,7 @@ class SettingsService:
             data["global"]["recent_scenarios"] = list(global_settings.recent_scenarios[-12:])
             data["global"]["favorite_sayings"] = list(global_settings.favorite_templates[-30:])
             data["global"]["recent_sayings"] = list(global_settings.recent_sayings[-30:])
+            data["global"]["companion_presence"] = dict(global_settings.companion_presence)
             data["instances"][pet_id] = {
                 "x": instance_settings.x,
                 "y": instance_settings.y,

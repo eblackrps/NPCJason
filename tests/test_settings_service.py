@@ -67,6 +67,7 @@ class SettingsServiceTests(unittest.TestCase):
             recent_scenarios=["office-chaos"],
             favorite_templates=["One", "Two"],
             recent_sayings=[{"template": "One", "text": "Rendered one", "source": "test", "timestamp": 1.0}],
+            companion_presence={"familiarity": 14, "days_used": 4, "today_mode_key": "patch-goblin"},
         )
         instance_settings = InstanceSettings(
             x=25,
@@ -103,6 +104,8 @@ class SettingsServiceTests(unittest.TestCase):
         self.assertEqual(["astronaut"], loaded.global_settings.unlocked_skins)
         self.assertEqual(3, loaded.global_settings.discovery_stats["launches"])
         self.assertEqual({"jason-quotes": False}, loaded.global_settings.quote_pack_states)
+        self.assertEqual(14, loaded.global_settings.companion_presence["familiarity"])
+        self.assertEqual(4, loaded.global_settings.companion_presence["days_used"])
         self.assertEqual("wizard", loaded.instance_settings.skin)
         self.assertEqual("Desk Jason", loaded.instance_settings.name)
         self.assertEqual("busy", loaded.instance_settings.personality_state)
@@ -137,7 +140,7 @@ class SettingsServiceTests(unittest.TestCase):
         self.service.export_to_file(export_path)
         exported = json.loads(export_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(7, exported["schema_version"])
+        self.assertEqual(8, exported["schema_version"])
         self.assertEqual(70, exported["global"]["sound_volume"])
         self.assertEqual({}, exported["instances"])
 

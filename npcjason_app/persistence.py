@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 
+from .companion_presence import sanitize_companion_presence_payload
 from .data.defaults import (
     MOODS,
     SETTINGS_SCHEMA_VERSION,
@@ -235,6 +236,9 @@ def sanitize_settings_payload(payload):
         if text:
             recent.append({"template": text, "text": text, "source": "history", "timestamp": 0.0})
     global_out["recent_sayings"] = recent[-30:]
+    global_out["companion_presence"] = sanitize_companion_presence_payload(
+        global_in.get("companion_presence", {})
+    )
 
     instances_out = {}
     for pet_id, value in instance_in.items():

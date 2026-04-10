@@ -333,6 +333,48 @@ MOUSE_INTERACTIONS = {
             CompanionPhase("pose", "proud", 1_280, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="Tiny victory lap complete."),
         ),
     ),
+    "crumb-heist": CompanionInteractionDefinition(
+        key="crumb-heist",
+        label="Crumb Heist",
+        description="Allow the mouse to recover one suspiciously strategic desk crumb.",
+        cooldown_ms=49_000,
+        contexts=("companion", "mouse", "crumb-heist"),
+        tags=("companion", "mouse", "desk", "snack"),
+        phases=(
+            CompanionPhase("approach", "following", 440, ("companion", "mouse-approach"), ("companion", "mouse")),
+            CompanionPhase("sniff", "sniffing", 840, ("companion", "mouse-sniff"), ("companion", "mouse", "curious")),
+            CompanionPhase("recover", "nibbling", 920, ("companion", "mouse-cheese"), ("companion", "mouse", "desk")),
+            CompanionPhase("report", "proud", 1_260, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="Recovered one desk crumb.\nClassified."),
+        ),
+    ),
+    "mug-recon": CompanionInteractionDefinition(
+        key="mug-recon",
+        label="Mug Recon",
+        description="Send the mouse to investigate the coffee situation with tiny field notes.",
+        cooldown_ms=63_000,
+        contexts=("companion", "mouse", "mug-recon"),
+        tags=("companion", "mouse", "coffee", "office"),
+        phases=(
+            CompanionPhase("approach", "following", 430, ("companion", "mouse-approach"), ("companion", "mouse")),
+            CompanionPhase("inspect", "sniffing", 900, ("companion", "mouse-sniff"), ("companion", "mouse", "coffee")),
+            CompanionPhase("hover", "waiting", 880, ("companion", "mouse-wait"), ("companion", "mouse", "office")),
+            CompanionPhase("report", "proud", 1_260, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="Steam levels acceptable.\nSmells like tickets."),
+        ),
+    ),
+    "zip-tie-recovery": CompanionInteractionDefinition(
+        key="zip-tie-recovery",
+        label="Zip Tie Recovery",
+        description="Have the mouse search for tiny forbidden infrastructure beneath the desk vibe.",
+        cooldown_ms=61_000,
+        contexts=("companion", "mouse", "zip-tie-recovery"),
+        tags=("companion", "mouse", "network", "desk"),
+        phases=(
+            CompanionPhase("approach", "following", 460, ("companion", "mouse-follow"), ("companion", "mouse")),
+            CompanionPhase("search", "sniffing", 980, ("companion", "mouse-sniff", "network"), ("companion", "mouse", "network")),
+            CompanionPhase("stash", "waiting", 960, ("companion", "mouse-wait"), ("companion", "mouse", "desk")),
+            CompanionPhase("report", "proud", 1_320, ("companion", "mouse-proud"), ("companion", "mouse", "smug"), speech_line="I found a zip tie.\nI now outrank someone."),
+        ),
+    ),
 }
 
 

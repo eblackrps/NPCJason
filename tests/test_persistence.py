@@ -29,6 +29,12 @@ class PersistenceTests(unittest.TestCase):
                 "recent_scenarios": ["busy-it-morning", " office-chaos ", ""],
                 "favorite_sayings": [" keep ", "", None],
                 "recent_sayings": ["line", {"text": "two", "timestamp": "3"}],
+                "companion_presence": {
+                    "familiarity": "12",
+                    "days_used": "2",
+                    "preferred_categories": {" network ": "3"},
+                    "recent_greetings": [" one ", "", "one"],
+                },
             },
             "instances": {
                 "main": {
@@ -70,6 +76,10 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(["busy-it-morning", "office-chaos"], sanitized["global"]["recent_scenarios"])
         self.assertEqual(["keep"], sanitized["global"]["favorite_sayings"])
         self.assertEqual(2, len(sanitized["global"]["recent_sayings"]))
+        self.assertEqual(12, sanitized["global"]["companion_presence"]["familiarity"])
+        self.assertEqual(2, sanitized["global"]["companion_presence"]["days_used"])
+        self.assertEqual({"network": 3}, sanitized["global"]["companion_presence"]["preferred_categories"])
+        self.assertEqual(["one"], sanitized["global"]["companion_presence"]["recent_greetings"])
         self.assertEqual("happy", sanitized["instances"]["main"]["mood"])
         self.assertEqual("smug", sanitized["instances"]["main"]["personality_state"])
         self.assertEqual("office-chaos", sanitized["instances"]["main"]["last_scenario"])
@@ -97,7 +107,7 @@ class PersistenceTests(unittest.TestCase):
         settings, settings_warnings = sanitize_settings_payload({"schema_version": 1})
         shared_state, shared_warnings = sanitize_shared_state_payload({"schema_version": 99})
 
-        self.assertEqual(7, settings["schema_version"])
+        self.assertEqual(8, settings["schema_version"])
         self.assertEqual(1, shared_state["schema_version"])
         self.assertTrue(any("schema upgraded" in warning for warning in settings_warnings))
         self.assertTrue(any("newer than supported" in warning for warning in shared_warnings))

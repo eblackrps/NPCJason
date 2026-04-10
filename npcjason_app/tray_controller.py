@@ -103,6 +103,10 @@ class TrayState:
     skin_key: str
     sound_enabled: bool
     auto_start_enabled: bool
+    relationship_label: str = ""
+    session_mode_label: str = ""
+    theme_spotlight_label: str = ""
+    reward_label: str = ""
     rare_events_enabled: bool = True
     chaos_mode: bool = False
     movement_enabled: bool = True
@@ -177,6 +181,10 @@ def build_tray_snapshot(state):
         title += f" | {state.active_scenario_label}"
     return {
         "title": title,
+        "relationship_label": state.relationship_label,
+        "session_mode_label": state.session_mode_label,
+        "theme_spotlight_label": state.theme_spotlight_label,
+        "reward_label": state.reward_label,
         "skin_labels": [skin.label for skin in state.skin_options],
         "selected_skin": state.skin_key,
         "sound_enabled": bool(state.sound_enabled),
@@ -410,6 +418,14 @@ class TrayController:
         return pystray.Menu(
             item("Show/Hide", self._dispatch(self.actions.toggle_visibility), default=True),
             item(lambda menu_item: snapshot["title"], lambda icon, menu_item: None, enabled=False),
+            item(lambda menu_item: f"Relationship: {self.state_provider().relationship_label}", lambda icon, menu_item: None, enabled=False),
+            item(lambda menu_item: f"Today's Vibe: {self.state_provider().session_mode_label}", lambda icon, menu_item: None, enabled=False),
+            item(lambda menu_item: f"Theme: {self.state_provider().theme_spotlight_label}", lambda icon, menu_item: None, enabled=False),
+            item(
+                lambda menu_item: f"New Reward: {self.state_provider().reward_label}",
+                lambda icon, menu_item: None,
+                enabled=lambda menu_item: bool(self.state_provider().reward_label),
+            ),
             item("Choose Skin", pystray.Menu(*skin_items)),
             item(
                 "Desk Items",
