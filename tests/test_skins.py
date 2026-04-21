@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 import unittest
 
 from npcjason_app.skins import (
@@ -84,6 +86,18 @@ class SkinTests(unittest.TestCase):
         self.assertIn("squarl-suit", bundle["definitions"])
         self.assertEqual("Squarl Suit Jason", bundle["definitions"]["squarl-suit"]["label"])
         self.assertEqual([], [error for error in bundle["errors"] if "squarl-suit-jason.json" in error])
+
+    def test_veeam_skin_pack_validates_and_builds(self):
+        skin_path = Path(__file__).resolve().parents[1] / "skins" / "veeam-jason.json"
+        payload = json.loads(skin_path.read_text(encoding="utf-8"))
+
+        normalized, errors = validate_skin_definition(payload, skin_path.name)
+        assets = build_skin_assets(normalized)
+
+        self.assertEqual("veeam", normalized["key"])
+        self.assertEqual([], errors)
+        self.assertIn("idle_open", assets["frames"])
+        self.assertEqual("#00b336", assets["tray"]["body"])
 
 
 if __name__ == "__main__":

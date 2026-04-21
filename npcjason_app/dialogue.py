@@ -110,6 +110,7 @@ PET_CONVERSATIONS = [
 ]
 
 TOKEN_PATTERN = re.compile(r"\{([a-z_]+)\}")
+SKIN_SECTION_PATTERN = re.compile(r"^\[skin:\s*([a-z0-9_-]+)\s*\]$", re.IGNORECASE)
 SECTION_NAMES = {"any", "all", "happy", "tired", "caffeinated"}
 ALLOWED_TEMPLATE_TOKENS = {
     "pet_name",
@@ -193,6 +194,7 @@ def empty_pool():
         "happy": [],
         "tired": [],
         "caffeinated": [],
+        "skins": {},
     }
 
 
@@ -214,7 +216,10 @@ def parse_dialogue_source(text, source_name="<memory>"):
     def flush_current():
         saying = _normalize_text_block(current_lines)
         if saying:
-            custom[current_section].append(saying)
+            if isinstance(current_section, tuple) and current_section[0] == "skin":
+                custom["skins"].setdefault(current_section[1], []).append(saying)
+            else:
+                custom[current_section].append(saying)
             unknown_tokens = unknown_template_tokens(saying)
             if unknown_tokens:
                 warnings.append(
@@ -233,6 +238,11 @@ def parse_dialogue_source(text, source_name="<memory>"):
         if lowered in {"[happy]", "[tired]", "[caffeinated]"}:
             flush_current()
             current_section = lowered[1:-1]
+            continue
+        skin_match = SKIN_SECTION_PATTERN.match(stripped)
+        if skin_match:
+            flush_current()
+            current_section = ("skin", skin_match.group(1).lower())
             continue
         if stripped.startswith("[") and stripped.endswith("]") and lowered[1:-1] not in SECTION_NAMES:
             flush_current()
@@ -259,8 +269,10 @@ def parse_dialogue_text(text):
 def merge_pools(*pools):
     merged = empty_pool()
     for pool in pools:
-        for mood_key in merged:
+        for mood_key in ("any", "happy", "tired", "caffeinated"):
             merged[mood_key].extend(pool.get(mood_key, []))
+        for skin_key, entries in dict(pool.get("skins", {})).items():
+            merged["skins"].setdefault(str(skin_key).lower(), []).extend(entries)
     return merged
 
 
@@ -378,6 +390,8 @@ def _build_entry(raw_text, source_name, warnings, moods=None, categories=None, w
 def _legacy_pool_to_entries(parsed_pool, source_name, warnings):
     entries = []
     for mood_key, sayings in parsed_pool.items():
+        if mood_key == "skins":
+            continue
         for saying in sayings:
             entry = _build_entry(
                 saying,
@@ -387,6 +401,22 @@ def _legacy_pool_to_entries(parsed_pool, source_name, warnings):
                 categories=["legacy", mood_key],
                 weight=1,
                 affinity=None,
+            )
+            if entry is not None:
+                entries.append(entry)
+    for skin_key, sayings in dict(parsed_pool.get("skins", {})).items():
+        normalized_skin = str(skin_key).strip().lower()
+        if not normalized_skin:
+            continue
+        for saying in sayings:
+            entry = _build_entry(
+                saying,
+                source_name,
+                warnings,
+                moods=[],
+                categories=["legacy", "skin"],
+                weight=1,
+                affinity={"skins": [normalized_skin]},
             )
             if entry is not None:
                 entries.append(entry)
@@ -702,6 +732,11 @@ class DialogueLibrary:
         toy_key = str(context.get("toy", context.get("toy_key", ""))).strip()
         mood_key = str(context.get("mood_key", mood)).strip() or mood
 
+        quote_affinity = quote.normalized_affinity
+        if "skin" in set(quote.categories) and quote_affinity.get("skins"):
+            if not skin_key or skin_key not in set(quote_affinity.get("skins", [])):
+                return 0
+
         bonus = 1
         if pack.key in preferred_packs:
             bonus += 4
@@ -711,7 +746,7 @@ class DialogueLibrary:
             bonus += 3
 
         bonus += self._affinity_bonus(pack.normalized_affinity, skin_key, skin_tags, context_tags, toy_key, mood_key)
-        bonus += self._affinity_bonus(quote.normalized_affinity, skin_key, skin_tags, context_tags, toy_key, mood_key)
+        bonus += self._affinity_bonus(quote_affinity, skin_key, skin_tags, context_tags, toy_key, mood_key)
         return weight * max(1, bonus)
 
     @staticmethod
@@ -729,9 +764,12 @@ class DialogueLibrary:
             bonus += 3
         return bonus
 
-    def ambient_pool(self, mood, context=None):
+    def ambient_pool(self, mood, context=None, skin_key=None):
         self.reload_if_needed()
-        return [choice.template for choice, _weight in self._ambient_candidates(mood, context)]
+        ambient_context = dict(context or {})
+        if skin_key and "skin_key" not in ambient_context:
+            ambient_context["skin_key"] = skin_key
+        return [choice.template for choice, _weight in self._ambient_candidates(mood, ambient_context)]
 
     def pick_ambient(self, mood, context=None, recent_templates=None, rng=None):
         self.reload_if_needed()

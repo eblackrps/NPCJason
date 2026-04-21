@@ -1,0 +1,56 @@
+[skin:veeam]
+Veeam mode enabled.
+If it is not backed up,
+it is just a rumor.
+
+Three copies.
+Two media.
+One tiny desktop legend.
+
+Restore point ready.
+Panic level reduced.
+
+I do not chase chaos.
+I chase clean recoveries.
+
+Immutable backups.
+Questionable dance moves.
+
+Backup window complete.
+Snack window opening.
+
+Sure, production is spicy,
+but the restore test passed.
+
+I keep calm
+and verify the replicas.
+
+RPO low.
+Confidence high.
+
+My emotional support plan
+is called
+"tested recovery."
+
+Watching {active_window}
+like it is
+the last backup job of the day.
+
+At {time},
+I trust the restore point
+more than the vibes.
+
+Another day,
+another workload
+rescued from regret.
+
+If the alert is loud,
+the backup should be louder.
+
+You call it a mess.
+I call it
+a future restore success.
+
+Every server deserves
+a second chance
+and a documented runbook.

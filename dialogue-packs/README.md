@@ -6,6 +6,7 @@ Legacy `.txt` packs:
 
 - Separate sayings with a blank line
 - Optional mood sections: `[any]`, `[happy]`, `[tired]`, `[caffeinated]`
+- Optional skin-only sections: `[skin:veeam]`, using the skin pack `key`
 - Lines starting with `#` or `;` are treated as comments
 - Placeholders like `{pet_name}`, `{mood}`, `{time}`, `{date}`, `{active_window}`, `{battery_percent}`, `{skin}`, `{companion}`, `{dance_routine}`, `{desk_item}`, and `{other_pet_name}` are filled in automatically when available
 - Unknown placeholders are left alone, so literal braces in jokes are still safe

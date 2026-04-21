@@ -114,6 +114,7 @@ NPCJason hot-reloads `sayings.txt` while running, so you usually do not need to 
 ### Dialogue packs
 
 Add extra `.txt` or `.json` files to [`dialogue-packs/`](./dialogue-packs). Text packs use the same section format as `sayings.txt`; JSON packs add categories, affinity rules, and weighting.
+Text packs also support placeholders like `{pet_name}` and `{active_window}`, plus skin-targeted sections like `[skin:veeam]`.
 
 ### Skin packs
 

@@ -1,5 +1,5 @@
-import unittest
 from pathlib import Path
+import unittest
 
 from npcjason_app.dialogue import DialogueLibrary, merge_pools, parse_dialogue_source, parse_dialogue_text, render_template
 from tests.helpers import workspace_tempdir
@@ -27,13 +27,14 @@ class DialogueTests(unittest.TestCase):
         self.assertIn("Tired line", parsed["tired"])
 
     def test_merge_pools_combines_entries(self):
-        left = {"any": ["a"], "happy": [], "tired": [], "caffeinated": []}
-        right = {"any": ["b"], "happy": ["c"], "tired": [], "caffeinated": []}
+        left = {"any": ["a"], "happy": [], "tired": [], "caffeinated": [], "skins": {"veeam": ["d"]}}
+        right = {"any": ["b"], "happy": ["c"], "tired": [], "caffeinated": [], "skins": {"veeam": ["e"]}}
 
         merged = merge_pools(left, right)
 
         self.assertEqual(["a", "b"], merged["any"])
         self.assertEqual(["c"], merged["happy"])
+        self.assertEqual(["d", "e"], merged["skins"]["veeam"])
 
     def test_render_template_replaces_known_tokens_only(self):
         rendered = render_template(
@@ -167,6 +168,51 @@ class DialogueTests(unittest.TestCase):
 
         self.assertIn("app-title-humor", pack_keys)
         self.assertIn("cisco-jokes", pack_keys)
+
+    def test_parse_dialogue_source_handles_skin_sections(self):
+        parsed, warnings = parse_dialogue_source(
+            """
+            [skin:veeam]
+            Restore point standing by.
+            """,
+            source_name="veeam.txt",
+        )
+
+        self.assertEqual(["Restore point standing by."], parsed["skins"]["veeam"])
+        self.assertEqual([], warnings)
+
+    def test_ambient_pool_includes_only_matching_skin_lines(self):
+        with workspace_tempdir() as temp_dir:
+            packs_dir = Path(temp_dir)
+            (packs_dir / "veeam-pack.txt").write_text(
+                """
+                [skin:veeam]
+                Veeam line
+                """,
+                encoding="utf-8",
+            )
+            library = DialogueLibrary(
+                sayings_path=packs_dir / "missing.txt",
+                packs_dir=packs_dir,
+                pack_states={"builtin-general": False, "builtin-moods": False},
+            )
+
+            veeam_pool = library.ambient_pool("happy", context={"skin_key": "veeam"})
+            classic_pool = library.ambient_pool("happy", context={"skin_key": "jason"})
+
+            self.assertIn("Veeam line", veeam_pool)
+            self.assertNotIn("Veeam line", classic_pool)
+
+    def test_veeam_dialogue_pack_parses_without_warnings(self):
+        pack_path = Path(__file__).resolve().parents[1] / "dialogue-packs" / "veeam-jason.txt"
+        parsed, warnings = parse_dialogue_source(
+            pack_path.read_text(encoding="utf-8"),
+            source_name=pack_path.name,
+        )
+
+        self.assertIn("veeam", parsed["skins"])
+        self.assertGreaterEqual(len(parsed["skins"]["veeam"]), 10)
+        self.assertEqual([], warnings)
 
 
 if __name__ == "__main__":
