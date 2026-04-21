@@ -2,21 +2,18 @@
 
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.8.0`
+> **Current release target:** `v1.8.1`
 
 ---
 
-## What’s New In v1.8.0
+## What’s New In v1.8.1
 
-This release makes Jason feel more like a long-running desktop companion instead of a stack of disconnected bits:
+This patch release adds Veeam-flavored content without disturbing the newer runtime systems:
 
-- A lightweight familiarity system that remembers time spent together and subtly changes how Jason greets, reacts, and unlocks things
-- Intentional startup greetings, quiet sign-offs, daily mood surfacing, and theme spotlights so sessions feel like they have a point of view
-- Milestone moments for longer sessions and repeat visits, plus low-frequency ambient world beats that make the desktop feel inhabited
-- Clearer unlock and discovery surfacing so new weird little rewards do not disappear quietly into the background
-- A livelier mouse sidekick with Crumb Heist, Mug Recon, Zip Tie Recovery, and calmer ambient sidekick behavior
-- More expressive success, confusion, interruption, and cooldown reactions so Jason reads as intentional instead of glitchy
-- Runtime polish for the new long-session systems, including safer upgrade backfill for relationship history, better milestone delivery, and less intrusive suppression behavior
+- New `Veeam Jason` skin pack with branded green styling and tray colors
+- A Veeam-themed dialogue pack with backup, recovery, and restore-point jokes
+- Support for skin-targeted legacy text sections like `[skin:veeam]` so a quote pack can follow a specific skin
+- Tests covering skin-targeted legacy dialogue parsing and the new Veeam assets
 
 ---
 
@@ -24,6 +21,7 @@ This release makes Jason feel more like a long-running desktop companion instead
 
 - Multiple skins: Classic Jason, Wizard Jason, Knight Jason, and Astronaut Jason
 - Expanded built-in skins: Office Jason, Homelab Jason, Network Jason, and Responsible Jason
+- Included external skin pack: Veeam Jason
 - External skin packs that can be dropped into [`skins/`](./skins) and hot-reloaded live
 - Skin Framework v2 with tags, quote affinity, sound sets, accessory offsets, and per-skin animation metadata
 - Idle breathing and blinking animation
@@ -82,7 +80,7 @@ The project uses PyInstaller for standalone packaging today. If you ever want an
 1. Open the [Releases](../../releases) page
 2. Download either:
    - `NPCJason.exe` for the standalone app
-   - `NPCJason_Setup_1.8.0.exe` for the installer
+   - `NPCJason_Setup_1.8.1.exe` for the installer
 3. Launch it and let Jason haunt your desktop
 
 ### Controls
@@ -178,7 +176,7 @@ This installs dependencies from [`pyproject.toml`](./pyproject.toml), runs tests
 build_installer.bat
 ```
 
-This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.8.0.exe`.
+This runs tests, builds `dist\NPCJason.exe`, and produces `NPCJason_Setup_1.8.1.exe`.
 
 ### Release automation
 
