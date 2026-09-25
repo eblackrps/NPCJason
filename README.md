@@ -1,8 +1,11 @@
 # NPCJason - Desktop Pet Companion
 
+[![Latest Release](https://img.shields.io/github/v/release/eblackrps/NPCJason)](https://github.com/eblackrps/NPCJason/releases/latest)
+[![License](https://img.shields.io/github/license/eblackrps/NPCJason)](LICENSE)
+
 NPCJason is a Windows desktop pet that lives on top of your desktop, reacts to system events, swaps skins, chats with cloned friends, and ships as a standalone EXE so end users do not need Python installed.
 
-> **Current release target:** `v1.8.1`
+> **Current release:** `v1.8.1`
 
 ---
 
